@@ -1,2 +1,21 @@
 *.pt
 *.log
+# Dataset
+datasets/
+
+# Training results
+runs/
+
+# Generated config files
+generated_yamls/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Model weights / exported models
+*.pt
+*.pth
+*.onnx
+*.engine
+*.cache
