@@ -5,25 +5,7 @@
 #   2. FP32 pretrained yolo11n.pt를 불러온다.
 #   3. Ultralytics YOLO 학습 루프 내부에서 PyTorch QAT를 적용한다.
 #   4. fake quant 상태로 QAT fine-tuning을 진행한다.
-#   5. QAT 적용 모델을 별도로 저장한다.
-#
-# 설치:
-#   pip install ultralytics torch torchvision
-#
-# 빠른 테스트:
-#   python yolo11_coco_qat_full.py --dataset coco128 --epochs 5 --batch 4 --device 0
-#
-# 전체 COCO 사용:
-#   python yolo11_coco_qat_full.py --dataset coco --epochs 10 --batch 16 --device 0
-#
-# 다운로드만:
-#   python yolo11_coco_qat_full.py --dataset coco128 --download-only
-#
-# 주의:
-#   이 코드는 "QAT fine-tuning" 코드다.
-#   학습 중에는 fake quant로 INT8 양자화 오차를 흉내 낸다.
-#   최종 배포용 완전한 INT8 engine은 TensorRT, Vitis AI, ONNX Runtime 등
-#   target backend에서 별도 변환 과정이 필요할 수 있다.
+#   5. QAT 적용 모델을 state_dict 형태로 별도 저장한다.
 # ------------------------------------------------------------
 
 import argparse
@@ -65,14 +47,17 @@ COCO_NAMES = [
 
 def has_jpgs(directory: Path) -> bool:
     """
-    특정 폴더 안에 jpg 이미지가 있는지 확인한다.
-    COCO가 이미 받아져 있는지 판단할 때 사용한다.
+    특정 폴더 안에 jpg/jpeg/png 이미지가 있는지 확인한다.
     """
 
     if not directory.exists():
         return False
 
-    return any(directory.glob("*.jpg")) or any(directory.glob("*.jpeg")) or any(directory.glob("*.png"))
+    return (
+        any(directory.glob("*.jpg"))
+        or any(directory.glob("*.jpeg"))
+        or any(directory.glob("*.png"))
+    )
 
 
 def get_default_datasets_dir() -> Path:
@@ -90,9 +75,6 @@ def get_default_datasets_dir() -> Path:
 def ensure_coco128(datasets_dir: Path) -> Path:
     """
     COCO128 다운로드 함수.
-
-    COCO128은 COCO train2017 중 첫 128장만 있는 작은 테스트용 데이터셋이다.
-    QAT 코드가 정상 작동하는지 확인할 때 먼저 쓰는 것을 추천한다.
     """
 
     coco128_dir = datasets_dir / "coco128"
@@ -107,10 +89,7 @@ def ensure_coco128(datasets_dir: Path) -> Path:
 
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ultralytics assets에 있는 coco128.zip 사용
     url = ASSETS_URL + "/coco128.zip"
-
-    # ultralytics download 함수는 zip 다운로드 후 압축해제를 처리한다.
     download([url], dir=datasets_dir)
 
     if not has_jpgs(image_dir):
@@ -125,19 +104,6 @@ def ensure_coco128(datasets_dir: Path) -> Path:
 def ensure_coco_full(datasets_dir: Path, download_test: bool = False) -> Path:
     """
     COCO 2017 전체 데이터셋 다운로드 함수.
-
-    다운로드 구성:
-        labels:
-            coco2017labels.zip
-
-        images:
-            train2017.zip
-            val2017.zip
-            선택적으로 test2017.zip
-
-    주의:
-        전체 COCO는 용량이 크다.
-        train2017 약 19GB, val2017 약 1GB, test2017 약 7GB 수준이다.
     """
 
     coco_dir = datasets_dir / "coco"
@@ -160,13 +126,11 @@ def ensure_coco_full(datasets_dir: Path, download_test: bool = False) -> Path:
 
     datasets_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. YOLO 형식 COCO labels 다운로드
     if not label_ok:
         print("[DATA] COCO YOLO labels 다운로드")
         label_url = ASSETS_URL + "/coco2017labels.zip"
         download([label_url], dir=datasets_dir)
 
-    # 2. COCO 이미지 다운로드
     image_urls = []
 
     if not train_ok:
@@ -184,7 +148,6 @@ def ensure_coco_full(datasets_dir: Path, download_test: bool = False) -> Path:
         print("[DATA] COCO images 다운로드")
         download(image_urls, dir=coco_dir / "images", threads=3)
 
-    # 최종 확인
     if not has_jpgs(train_img_dir):
         raise RuntimeError(f"train2017 이미지를 찾지 못했습니다: {train_img_dir}")
 
@@ -204,11 +167,6 @@ def ensure_coco_full(datasets_dir: Path, download_test: bool = False) -> Path:
 def write_local_coco_yaml(dataset_name: str, dataset_dir: Path, output_dir: Path) -> Path:
     """
     Ultralytics 학습에 사용할 local yaml 파일을 직접 생성한다.
-
-    이렇게 하는 이유:
-        그냥 data=coco.yaml을 쓰면 Ultralytics 기본 datasets_dir를 사용한다.
-        여기서는 우리가 다운로드한 정확한 경로를 path로 박아 넣기 위해
-        local yaml을 생성한다.
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -275,20 +233,38 @@ def prepare_dataset(args) -> Path:
 # 3. QAT 관련 함수
 # ------------------------------------------------------------
 
+class QATNoOpEMA:
+    """
+    Ultralytics Trainer는 내부에서 self.ema.update(),
+    self.ema.update_attr(), self.ema.ema를 사용한다.
+
+    QAT에서는 Conv+BN fuse와 fake quant/observer 삽입 이후
+    기존 EMA 업데이트가 key mismatch 또는 shape mismatch를 일으킬 수 있다.
+
+    따라서 실제 EMA 평균 업데이트는 하지 않고,
+    Ultralytics Trainer가 기대하는 최소 인터페이스만 제공한다.
+    """
+
+    def __init__(self, model: nn.Module):
+        self.ema = model
+        self.updates = 0
+
+    def update(self, model: nn.Module):
+        return
+
+    def update_attr(self, model: nn.Module, include=(), exclude=()):
+        for k in include:
+            if hasattr(model, k):
+                try:
+                    setattr(self.ema, k, getattr(model, k))
+                except Exception:
+                    pass
+        return
+
+
 def choose_qat_qconfig(backend: str):
     """
     QAT backend에 맞는 qconfig를 고른다.
-
-    backend 예시:
-        x86
-        fbgemm
-        qnnpack
-
-    일반 PC/서버:
-        x86 또는 fbgemm
-
-    ARM 계열:
-        qnnpack
     """
 
     try:
@@ -318,18 +294,7 @@ def choose_qat_qconfig(backend: str):
 
 def fuse_yolo_conv_bn_for_qat(model: nn.Module):
     """
-    Ultralytics YOLO의 기본 Conv 블록은 대체로 아래 형태다.
-
-        Conv(
-            conv = nn.Conv2d(...)
-            bn   = nn.BatchNorm2d(...)
-            act  = SiLU(...)
-        )
-
-    QAT에서는 Conv와 BN을 fuse하는 것이 일반적이다.
-    여기서는 conv + bn만 fuse를 시도한다.
-
-    SiLU는 ReLU처럼 단순 fuse 대상이 아니므로 그대로 둔다.
+    Ultralytics YOLO의 Conv 블록에서 conv + bn fuse를 시도한다.
     """
 
     fused_count = 0
@@ -364,15 +329,6 @@ def fuse_yolo_conv_bn_for_qat(model: nn.Module):
 def disable_qat_for_unsupported_or_sensitive_layers(model: nn.Module):
     """
     일부 layer는 QAT 대상에서 제외한다.
-
-    제외 예시:
-        - DFL layer
-        - Upsample
-        - 특수 출력 처리 모듈
-
-    이유:
-        YOLO detect head에는 DFL, decode 관련 처리가 섞여 있다.
-        이런 부분까지 무리하게 quantization을 걸면 convert/export에서 문제가 생길 수 있다.
     """
 
     disabled = []
@@ -382,11 +338,9 @@ def disable_qat_for_unsupported_or_sensitive_layers(model: nn.Module):
 
         should_disable = False
 
-        # DFL은 bbox distribution을 거리값으로 바꾸는 특수 layer
         if "dfl" in lname:
             should_disable = True
 
-        # Upsample은 quantized module로 바꿀 필요가 거의 없음
         if isinstance(module, nn.Upsample):
             should_disable = True
 
@@ -409,13 +363,6 @@ def enable_qat_callback_factory(args):
     def enable_qat_callback(trainer):
         """
         trainer.model이 준비된 뒤 실행되는 QAT 준비 callback.
-
-        핵심:
-            trainer.model에 직접 prepare_qat를 적용한다.
-
-        밖에서 YOLO(...).model에 적용하지 않는 이유:
-            Ultralytics train() 내부에서 trainer.model을 따로 구성하거나
-            checkpoint를 로드하는 과정이 있을 수 있기 때문이다.
         """
 
         model = trainer.model
@@ -431,24 +378,31 @@ def enable_qat_callback_factory(args):
 
         model.train()
 
-        # 1. Conv + BN fuse
         if args.fuse:
             fuse_yolo_conv_bn_for_qat(model)
         else:
             print("[QAT] --no-fuse 옵션으로 Conv+BN fuse 생략")
 
-        # 2. qconfig 설정
         qconfig = choose_qat_qconfig(args.qat_backend)
         model.qconfig = qconfig
 
-        # 3. 민감 layer 제외
         disable_qat_for_unsupported_or_sensitive_layers(model)
 
-        # 4. 실제 QAT 준비
-        #    이 과정에서 fake quant module / observer가 삽입된다.
         tq.prepare_qat(model, inplace=True)
 
         model._qat_prepared = True
+
+        trainer.ema = QATNoOpEMA(model)
+        print("[QAT] EMA 업데이트를 no-op으로 대체했습니다.")
+
+        trainer.args.save = False
+
+        def _skip_ultralytics_save_model(*save_args, **save_kwargs):
+            print("[QAT] Ultralytics 기본 checkpoint 저장을 건너뜁니다.")
+            return False
+
+        trainer.save_model = _skip_ultralytics_save_model
+        print("[QAT] Ultralytics 기본 checkpoint 저장을 비활성화했습니다.")
 
         print("[QAT] prepare_qat 완료")
         print("[QAT] 이제부터 fake quant 상태로 fine-tuning 됩니다.")
@@ -465,22 +419,17 @@ def qat_epoch_control_callback_factory(args):
         model = trainer.model
         epoch = int(trainer.epoch)
 
-        # observer 비활성화
-        # observer는 activation/weight 범위를 관찰해서 scale, zero_point를 갱신한다.
-        # 후반에는 고정시키는 것이 안정적일 때가 많다.
         if epoch >= args.freeze_observer_epoch:
             model.apply(tq.disable_observer)
 
             if epoch == args.freeze_observer_epoch:
                 print(f"[QAT] epoch {epoch}: observer 비활성화")
 
-        # BatchNorm 통계 고정
         if epoch >= args.freeze_bn_epoch:
             for module in model.modules():
                 if isinstance(module, nn.BatchNorm2d):
                     module.eval()
 
-                # ConvBn QAT fused module은 freeze_bn_stats를 가질 수 있다.
                 if hasattr(module, "freeze_bn_stats"):
                     try:
                         module.freeze_bn_stats()
@@ -506,7 +455,6 @@ def save_qat_model_callback_factory(args):
         model = trainer.model
         model.eval()
 
-        # 1. state_dict 저장
         state_dict_path = weights_dir / "qat_state_dict.pt"
 
         torch.save(
@@ -518,22 +466,12 @@ def save_qat_model_callback_factory(args):
                 "fp32_start_weight": args.fp32,
                 "note": (
                     "QAT fine-tuned fake-quant model state_dict. "
-                    "This is not necessarily a fully converted deployment INT8 model."
+                    "This is not a fully converted deployment INT8 model. "
+                    "For deployment, convert/export with the target backend."
                 ),
             },
             state_dict_path,
         )
-
-        # 2. 전체 모델 pickle 저장
-        # 같은 ultralytics/torch 버전에서 다시 불러와 실험하기 편하다.
-        # 단, 버전이 바뀌면 호환성이 떨어질 수 있다.
-        full_model_path = weights_dir / "qat_full_model_pickle.pt"
-
-        try:
-            torch.save(model, full_model_path)
-            print(f"[QAT] 전체 모델 저장 완료: {full_model_path}")
-        except Exception as e:
-            print(f"[QAT] 전체 모델 저장 실패: {e}")
 
         print(f"[QAT] state_dict 저장 완료: {state_dict_path}")
 
@@ -549,7 +487,6 @@ def run_qat_training(args):
     전체 QAT 학습 실행 함수.
     """
 
-    # 1. 데이터셋 준비
     data_yaml = prepare_dataset(args)
 
     if args.download_only:
@@ -557,21 +494,9 @@ def run_qat_training(args):
         print(f"[DONE] data yaml: {data_yaml}")
         return
 
-    # 2. FP32 pretrained YOLO11 로드
-    #    yolo11n.pt가 없으면 Ultralytics가 자동 다운로드한다.
     print(f"[MODEL] FP32 pretrained 모델 로드: {args.fp32}")
     yolo = YOLO(args.fp32)
 
-    # 3. QAT callback 등록
-    #
-    # on_pretrain_routine_end:
-    #   데이터/모델 준비가 끝난 뒤 실행되는 지점이다.
-    #
-    # on_train_epoch_start:
-    #   epoch마다 observer, BN 제어
-    #
-    # on_train_end:
-    #   학습 종료 후 QAT 모델 따로 저장
     yolo.add_callback(
         "on_pretrain_routine_end",
         enable_qat_callback_factory(args),
@@ -587,42 +512,60 @@ def run_qat_training(args):
         save_qat_model_callback_factory(args),
     )
 
-    # 4. QAT fine-tuning 실행
     print("[TRAIN] QAT fine-tuning 시작")
 
-    yolo.train(
-        data=str(data_yaml),
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch,
-        device=args.device,
-        project=args.project,
-        name=args.name,
+    try:
+        yolo.train(
+            data=str(data_yaml),
+            epochs=args.epochs,
+            imgsz=args.imgsz,
+            batch=args.batch,
+            device=args.device,
+            project=args.project,
+            name=args.name,
 
-        # pretrained weight에서 시작
-        pretrained=True,
+            pretrained=True,
 
-        # QAT는 보통 작은 learning rate로 fine-tuning
-        optimizer=args.optimizer,
-        lr0=args.lr0,
-        lrf=args.lrf,
-        weight_decay=args.weight_decay,
-        cos_lr=args.cos_lr,
+            optimizer=args.optimizer,
+            lr0=args.lr0,
+            lrf=args.lrf,
+            weight_decay=args.weight_decay,
+            cos_lr=args.cos_lr,
 
-        # QAT + AMP는 충돌하거나 불안정할 수 있으므로 기본적으로 끔
-        amp=False,
+            amp=False,
 
-        # augmentation
-        mosaic=args.mosaic,
-        mixup=args.mixup,
-        close_mosaic=args.close_mosaic,
+            mosaic=args.mosaic,
+            mixup=args.mixup,
+            close_mosaic=args.close_mosaic,
 
-        # 기타
-        workers=args.workers,
-        save=True,
-        plots=True,
-        val=True,
-    )
+            workers=args.workers,
+
+            # QAT 모델은 Ultralytics 기본 checkpoint 저장에서
+            # pickle 불가능한 quantization 객체 때문에 실패할 수 있으므로 끈다.
+            # QAT 모델은 on_train_end callback에서 state_dict로 따로 저장한다.
+            save=False,
+
+            plots=True,
+            val=True,
+        )
+
+    except FileNotFoundError as e:
+        msg = str(e)
+
+        qat_paths = sorted(
+            Path(".").glob(f"runs/**/{args.name}/weights/qat_state_dict.pt"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+        if "Training completed but no checkpoint was saved" in msg and qat_paths:
+            print(
+                "[QAT] Ultralytics 기본 best.pt/last.pt가 없어 발생한 "
+                "종료 후 확인 에러를 무시합니다."
+            )
+            print(f"[QAT] QAT state_dict는 정상 저장되어 있습니다: {qat_paths[0]}")
+        else:
+            raise
 
     print("[DONE] QAT fine-tuning 완료")
 
@@ -634,7 +577,6 @@ def run_qat_training(args):
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    # 데이터셋 관련
     parser.add_argument(
         "--dataset",
         type=str,
@@ -669,7 +611,6 @@ def parse_args():
         help="전체 COCO 사용 시 test2017도 다운로드.",
     )
 
-    # 모델 관련
     parser.add_argument(
         "--fp32",
         type=str,
@@ -677,8 +618,7 @@ def parse_args():
         help="시작할 FP32 pretrained YOLO11 pt 파일.",
     )
 
-    # 학습 관련
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--device", type=str, default="0")
@@ -693,12 +633,10 @@ def parse_args():
     parser.add_argument("--weight-decay", type=float, default=5e-4)
     parser.add_argument("--cos-lr", action="store_true", default=True)
 
-    # augmentation
     parser.add_argument("--mosaic", type=float, default=0.5)
     parser.add_argument("--mixup", type=float, default=0.0)
     parser.add_argument("--close-mosaic", type=int, default=3)
 
-    # QAT 관련
     parser.add_argument(
         "--qat-backend",
         type=str,
@@ -710,14 +648,14 @@ def parse_args():
     parser.add_argument(
         "--freeze-observer-epoch",
         type=int,
-        default=3,
+        default=10,
         help="이 epoch부터 observer 업데이트를 멈춤.",
     )
 
     parser.add_argument(
         "--freeze-bn-epoch",
         type=int,
-        default=3,
+        default=10,
         help="이 epoch부터 BatchNorm 통계를 고정.",
     )
 
