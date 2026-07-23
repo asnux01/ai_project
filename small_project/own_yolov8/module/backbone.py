@@ -11,10 +11,12 @@ class Backbone(nn.Module):
         deepen_factor,
         widen_factor,
         ratio,
-        shortcut,
+        shortcut=True,
         activation="silu"
     ):
-        
+        # nn.Module reset to use PyTorch
+        super(Backbone, self).__init__()
+                
         # channel parameter
         input_channels = 3
         hidden_channels = 64
@@ -24,12 +26,9 @@ class Backbone(nn.Module):
         stage3_channels = 8 * hidden_channels * widen_factor
         stage4_channels = 8 * hidden_channels * widen_factor * ratio
         
-        # bottleneck parameter
+        # bottleneck counter parameter
         bottleneck_count3 = 3 * deepen_factor
         bottleneck_count6 = 6 * deepen_factor
-        
-        # nn.Module reset to use PyTorch
-        super(Backbone, self).__init__()
         
         # Stem layer
         # Conv
@@ -128,6 +127,12 @@ class Backbone(nn.Module):
             out_channels=stage4_channels,
             activation=activation
         )
+        
+        self.out_channels = [
+            stage2_channels,
+            stage3_channels,
+            stage4_channels
+        ]
         
     # forward
     def forward(self, x):
