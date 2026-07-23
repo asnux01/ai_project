@@ -1,4 +1,4 @@
-# 라이브러리 삽입
+# insert library
 import torch
 import torch.nn as nn
 
@@ -11,9 +11,9 @@ class C2F(nn.Module):
         self,
         in_channels,
         out_channels,
-        bottleneck_count = 1,
-        shortcut = True,
-        activation = "silu"
+        bottleneck_count=1,
+        shortcut=True,
+        activation="silu"
     ):
         
         # nn.Module reset to use PyTorch
@@ -67,17 +67,17 @@ class C2F(nn.Module):
         
         # Split
         x1, x2 = x.chunk(2, dim=1)
-        features = [x1, x2]
+        y = [x1, x2]
         
         # bottleneck
         for bottleneck in self.bottlenecks:
-            out = bottleneck(features[-1])
+            out = bottleneck(y[-1])
             
-            features.append(out)
+            y.append(out)
             
         # Concat
         x = torch.cat(
-            features,
+            y,
             dim=1
         )
         

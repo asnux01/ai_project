@@ -1,4 +1,4 @@
-# 라이브러리 삽입
+# insert library
 import torch
 import torch.nn as nn
 
@@ -10,7 +10,7 @@ class SPPF(nn.Module):
         self,
         in_channels,
         out_channels,
-        activation = "silu"
+        activation="silu"
     ):
         
         # nn.Module reset to use PyTorch
@@ -71,7 +71,3 @@ class SPPF(nn.Module):
         
         # return
         return x
-        
-            
-        
-        

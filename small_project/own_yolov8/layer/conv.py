@@ -1,7 +1,7 @@
-# 라이브러리 삽입
+# insert library
 import torch.nn as nn
 
-# Conv → BatchNorm → 활성화 함수
+# Conv → BatchNorm → activation
 class ConvBNSiLU(nn.Module):
 
     def __init__(
@@ -11,7 +11,7 @@ class ConvBNSiLU(nn.Module):
         kernel_size,        
         stride,             
         padding,            
-        activation = "silu" 
+        activation="silu" 
     ):
         # nn.Module reset to use PyTorch
         super(ConvBNSiLU, self).__init__()

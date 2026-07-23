@@ -1,4 +1,4 @@
-# 라이브러리 삽입
+# insert library
 import torch.nn as nn
 
 from ..layer import ConvBNSiLU
@@ -9,8 +9,8 @@ class Bottleneck(nn.Module):
         self,
         in_channels,
         out_channels,
-        shortcut = True,
-        activation = "silu"
+        shortcut=True,
+        activation="silu"
     ):
         
         # nn.Module reset to use PyTorch
@@ -43,7 +43,7 @@ class Bottleneck(nn.Module):
     def forward(self, x):
         
         # residual
-        res = x
+        y = x
         
         # Conv -> Conv
         x = self.conv0(x)
@@ -51,7 +51,7 @@ class Bottleneck(nn.Module):
         
         # Shortcut
         if self.shortcut is True:
-            x = x + res
+            x = x + y
         
         # return
         return x
