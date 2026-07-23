@@ -1,37 +1,37 @@
 import torch
 import torch.nn as nn
-
-
+    
 # 두 개의 특징 맵을 채널 방향으로
-# 연결하는 모듈이다.
+# 연결하는 모듈
 class Concat(nn.Module):
 
-    def __init__(self):
-
-        # 부모 클래스인 nn.Module을 초기화한다.
+    def __init__(
+        self,
+        dimension = 1
+        ):
+        
+        # PyTorch를 사용하기 위해 nn.Module을 초기화
         super(Concat, self).__init__()
 
-    def forward(self, x1, x2):
+        # 연결할 차원 번호
+        self.dimension = dimension
+        
+    def forward(self, x1, x2, x3 = None, x4 = None):
+        # 반드시 전달되는 첫 번째와 두 번째 특징 맵을 저장
+        feature_maps = [x1, x2]
 
-        # PyTorch 이미지 특징 맵의 구조는 다음과 같다.
-        #
-        # [배치, 채널, 높이, 너비]
-        #          ↑
-        #        dim=1
-        #
-        # dim=1로 설정하면 두 특징 맵을
-        # 채널 방향으로 이어 붙인다.
-        #
-        # 예:
-        # x1 = [1, 64, 80, 80]
-        # x2 = [1, 128, 80, 80]
-        #
-        # 결과:
-        # x = [1, 192, 80, 80]
+        # 세 번째 특징 맵이 전달되었으면 추가
+        if x3 is not None:
+            feature_maps.append(x3)
+
+        # 네 번째 특징 맵이 전달되었으면 추가
+        if x4 is not None:
+            feature_maps.append(x4)
+
+        # 저장된 특징 맵들을 지정된 차원으로 연결
         x = torch.cat(
-            (x1, x2),
-            dim=1
+            feature_maps,
+            dim = self.dimension
         )
 
-        # 연결한 특징 맵을 반환한다.
         return x
