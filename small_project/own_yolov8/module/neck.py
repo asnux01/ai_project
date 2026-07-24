@@ -87,6 +87,12 @@ class Neck(nn.Module):
             activation=activation
         )
         
+        self.out_channels = [
+            in_channels[0],
+            in_channels[1],
+            in_channels[2]
+        ]
+        
     # forward
     def forward(self, x):
         
