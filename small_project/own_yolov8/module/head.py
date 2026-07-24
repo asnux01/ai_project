@@ -40,6 +40,7 @@ class Head(nn.Module):
         
     # Forward
     def forward(self, x):
+        
         # Conv block1
         x = self.conv_block(x)
         
