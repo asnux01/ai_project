@@ -128,6 +128,10 @@ class Backbone(nn.Module):
             activation=activation
         )
         
+<<<<<<< HEAD
+=======
+        # channels output
+>>>>>>> b623d60 (Add YOLO11 and camera modules)
         self.out_channels = [
             stage2_channels,
             stage3_channels,
@@ -161,4 +165,4 @@ class Backbone(nn.Module):
         stage4_out = x
         
         # return
-        return (stage2_out, stage3_out, stage4_out)
+        return [stage2_out, stage3_out, stage4_out]
