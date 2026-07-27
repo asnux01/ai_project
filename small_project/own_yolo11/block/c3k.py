@@ -10,61 +10,59 @@ class C3K (nn.Module):
     # initialized
     def __init__(
         self,
-        channels,
+        in_channels,
+        out_channels,
         n,
-        shortcut=True,
-        activation="silu"
+        shortcut=True
     ):
         
         # nn.Module reset to use PyTorch
         super(C3K, self).__init__()
         
         # parameter
-        ch0 = channels
-        ch1 = channels // 2
-        cnt = n
+        ch_io = in_channels         # I/O channels
+        ch_h = out_channels // 2    # hidden channels
+        bn_cnt = n                  # bottleneck counter
         
         # branch0 Conv: bottleneck X
         self.conv0 = Conv(
-            in_channels=ch0,
-            out_channels=ch1,
+            in_channels=ch_io,
+            out_channels=ch_h,
             kernel_size=1,
             stride=1,
-            padding=0,
-            activation=activation
+            padding=0
         )
         
         # branch1 Conv: bottleneck O
         self.conv1 = Conv(
-            in_channels=ch0,
-            out_channels=ch1,
+            in_channels=ch_io,
+            out_channels=ch_h,
             kernel_size=1,
             stride=1,
-            padding=0,
-            activation=activation
+            padding=0
         )
         
+        # Bottleneck
         # Bottleneck list
         self.bottlenecks = nn.ModuleList()
                         
         # Bottleneck append
-        for _ in range(cnt):
+        for _ in range(bn_cnt):
             bottleneck = Bottleneck(
-                channels=ch1,
-                shortcut=shortcut,
-                activation=activation
+                in_channels=ch_h,
+                out_channels=ch_h,
+                shortcut=shortcut
             )
                 
             self.bottlenecks.append(bottleneck)
     
         # After concat Conv
         self.conv2 = Conv(
-            in_channels=ch0,
-            out_channels=ch0,
+            in_channels=ch_io,
+            out_channels=ch_io,
             kernel_size=1,
             stride=1,
-            padding=0,
-            activation=activation
+            padding=0
         )
         
     # forward

@@ -9,34 +9,34 @@ class Bottleneck(nn.Module):
     # initialize
     def __init__(
         self,
-        channels,
-        shortcut=True,
-        activation="silu"
+        in_channels,
+        out_channels,
+        shortcut=True
     ):
         
         # nn.Module reset to use PyTorch
         super(Bottleneck, self).__init__()
         
         # parameter
-        ch0 = channels
+        ch_i = in_channels
+        ch_h = in_channels
+        ch_o = out_channels
           
         # Conv
         self.conv0 = Conv(
-            in_channels=ch0,
-            out_channels=ch0,
+            in_channels=ch_i,
+            out_channels=ch_h,
             kernel_size=3,
             stride=1,
             padding=1,
-            activation=activation
         )
         
         self.conv1 = Conv(
-            in_channels=ch0,
-            out_channels=ch0,
+            in_channels=ch_h,
+            out_channels=ch_o,
             kernel_size=3,
             stride=1,
             padding=1,
-            activation=activation
         )
         
         # Shortcut parameter

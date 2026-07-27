@@ -18,10 +18,14 @@ class Conv(nn.Module):
         # nn.Module reset to use PyTorch
         super(Conv, self).__init__()
         
+        # parameter
+        ch_i = in_channels      # input channels
+        ch_o = out_channels     # output channels
+        
         # Conv2d
         self.conv = nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
+            in_channels=ch_i,
+            out_channels=ch_o,
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
@@ -30,7 +34,7 @@ class Conv(nn.Module):
         
         # BatchNorm
         self.bn = nn.BatchNorm2d(
-            num_features=out_channels
+            num_features=ch_o
         )
         
         # Activation

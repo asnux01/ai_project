@@ -9,31 +9,33 @@ class SPPF(nn.Module):
     # initialize
     def __init__(
         self,
-        channels,
-        activation="silu"
+        in_channels,
+        out_channels,
+        k=5
     ):
         
         # nn.Module reset to use PyTorch
         super(SPPF, self).__init__()
         
         # parameter
-        ch0 = channels
-        ch1 = channels // 2
-        ch2 = ch1 * 4
+        ch_i = in_channels          # in channels
+        ch_o = out_channels         # out channels
+        ch_h = out_channels // 2    # hidden channels
+        ch_c = ch_h * 4             # concated channels
+        mp_k = k                    # maxpool kernel size
         
         # Conv0
         self.conv0 = Conv(
-            in_channels=ch0,
-            out_channels=ch1,
+            in_channels=ch_i,
+            out_channels=ch_h,
             kernel_size=1,
             stride=1,
-            padding=0,
-            activation=activation
+            padding=0
         )
         
         # Maxpool2d
         self.maxpool2d = nn.MaxPool2d(
-            kernel_size=5,
+            kernel_size=mp_k,
             stride=1,
             padding=2
         )
@@ -42,12 +44,11 @@ class SPPF(nn.Module):
         
         # Conv1
         self.conv1 = Conv(
-            in_channels=ch2,
-            out_channels=ch0,
+            in_channels=ch_c,
+            out_channels=ch_o,
             kernel_size=1,
             stride=1,
-            padding=0,
-            activation=activation
+            padding=0
         )
         
     # forward
