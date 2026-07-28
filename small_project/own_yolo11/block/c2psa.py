@@ -14,6 +14,7 @@ class C2PSA(nn.Module):
         in_channels,
         out_channels,
         n,
+        shortcut=True,
         e=0.5
     ):
         
@@ -55,7 +56,7 @@ class C2PSA(nn.Module):
                 out_channels=ch_h,
                 attn_ratio=0.5,
                 num_heads=head_cnt,
-                shortcut=True
+                shortcut=shortcut
             )
             
             self.blocks.append(block)
