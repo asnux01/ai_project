@@ -72,7 +72,7 @@ class Attention(nn.Module):
             kernel_size=3,
             stride=1,
             padding=1,
-            groups=ch,
+            groups=ch_o,
             activation="identity"
         )
         
@@ -117,7 +117,7 @@ class Attention(nn.Module):
         x_qkv = x_qkv.view(
             B,
             self.num_heads,
-            self.key_dim * 2 + self.head_dim,
+            self.qk_dim * 2 + self.head_dim,
             N
         )
         
@@ -128,8 +128,8 @@ class Attention(nn.Module):
         # v: [B, num_heads, head_dim, N]
         q, k, v = x_qkv.split(
             [
-                self.key_dim,
-                self.key_dim,
+                self.qk_dim,
+                self.qk_dim,
                 self.head_dim
             ],
             dim=2
@@ -169,7 +169,7 @@ class Attention(nn.Module):
         # ->
         #
         # [B, C, H, W]
-        x = x.view(
+        x = x.reshape(
             B,
             C,
             H,
