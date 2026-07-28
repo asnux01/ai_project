@@ -12,6 +12,7 @@ class Conv(nn.Module):
         kernel_size,
         stride,
         padding,
+        groups=1,
         activation="silu"
     ):
         
@@ -29,6 +30,7 @@ class Conv(nn.Module):
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
+            groups=groups,
             bias=False
         )
         

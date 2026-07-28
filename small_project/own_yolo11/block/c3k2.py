@@ -29,7 +29,6 @@ class C3K2(nn.Module):
         ch_s = 2 * ch_h                 # channels before split
         ch_c = (n + 2) * ch_h           # channels after concat
         bn_cnt = n                      # bottleneck counter
-        self.c3k = c3k                  # choose c3k or bottleneck
         
         # Conv before Split 
         self.conv0 = Conv(
@@ -40,31 +39,33 @@ class C3K2(nn.Module):
             padding=0
         )
         
-        # C3K
-        self.c3k0 = C3K(
-            in_channels=ch_h,
-            out_channels=ch_h,
-            n=bn_cnt,
-            shortcut=shortcut
-        )
-        
-        # Bottleneck
-        # Bottleneck list
-        self.bottlenecks = nn.ModuleList()
+        # Bottleneck or C3K
+        # if ck3 is true: ck3
+        # if ck3 is false: bottleneck
+        # Ck3 and Bottleneck list
+        self.blocks = nn.ModuleList()
                                 
-        # Bottleneck append
+        # Both append
         for _ in range(bn_cnt):
-            bottleneck = Bottleneck(
-                in_channels=ch_h,
-                out_channels=ch_h,
-                shortcut=shortcut
-            )
+            if c3k:
+                block = C3K(
+                    in_channels=ch_h,
+                    out_channels=ch_h,
+                    n=2,
+                    shortcut=shortcut,
+                )
+            else:
+                block = Bottleneck(
+                    in_channels=ch_h,
+                    out_channels=ch_h,
+                    shortcut=shortcut
+                )
                         
-            self.bottlenecks.append(bottleneck)
+            self.blocks.append(block)
 
         # Conv after Concat
         self.conv1 = Conv(
-            in_channels=ch_s,
+            in_channels=ch_c,
             out_channels=ch_o,
             kernel_size=1,
             stride=1,
@@ -78,13 +79,29 @@ class C3K2(nn.Module):
         x = self.conv0(x)
         
         # Split x0, x1
-        # x0: not pass C3K or Bottleneck
-        # x1: pass C3K or Bottleneck
-        x0, x1 = self.conv0(x).chunk(
+        # x0: not passing C3K or Bottleneck
+        # x1: passing C3K or Bottleneck
+        x0, x1 = x.chunk(
             chunks=2,
             dim=1
         )
         
-        # C3K or Bottleneck
-        if self.c3k is True:
+        # make list
+        y = [x0, x1]
+        
+        # passing C3K or Bottleneck
+        for block in self.blocks:
+            x1 = block(x1)
+            y.append(x1)
             
+        # Concat
+        x = torch.cat(
+            y,
+            dim=1
+        )
+        
+        # Conv after Concat
+        x = self.conv1(x)
+        
+        # return
+        return x
