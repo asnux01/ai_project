@@ -1,0 +1,1 @@
+from .yolov11 import Yolov11
