@@ -2,7 +2,8 @@
 import torch
 import torch.nn as nn
 
-from ..block import BoxBranch, ClassBranch, DFL, make_anchors, dist2bbox
+from ..block import BoxBranch, ClassBranch, DFL
+from ..utils import make_anchors, dist2bbox
 
 class Head(nn.Module):
 

@@ -4,4 +4,3 @@ from .sppf import SPPF
 from .boxbranch import BoxBranch
 from .classbranch import ClassBranch
 from .dfl import DFL
-from .bbox_utils import make_anchors, dist2bbox
