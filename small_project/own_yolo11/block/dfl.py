@@ -21,20 +21,20 @@ class DFL(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-                bias=False,
+                bias=False
             )
 
             # Integral weights: [0, 1, 2, ..., reg_max - 1]
             projection = torch.arange(
                 reg_max,
-                dtype=torch.float32,
+                dtype=torch.float32
             )
 
             projection = projection.reshape(
                 1,
                 reg_max,
                 1,
-                1,
+                1
             )
 
             # Set fixed convolution weights
@@ -58,7 +58,7 @@ class DFL(nn.Module):
                 batch_size,
                 4,
                 self.reg_max,
-                num_anchors,
+                num_anchors
             )
 
             # Move distribution dimension to Conv2d channel dimension
@@ -70,7 +70,7 @@ class DFL(nn.Module):
             # Convert logits into probability distributions
             x = torch.softmax(
                 x,
-                dim=1,
+                dim=1
             )
 
             # Calculate expected distances
@@ -88,7 +88,7 @@ class DFL(nn.Module):
             x = x.reshape(
                 batch_size,
                 4,
-                num_anchors,
+                num_anchors
             )
 
             # return

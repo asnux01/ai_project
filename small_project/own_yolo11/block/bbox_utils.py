@@ -6,7 +6,7 @@ import torch
 def make_anchors(
     features,
     strides,
-    grid_cell_offset=0.5,
+    grid_cell_offset=0.5
 ):
 
     # Result containers
@@ -27,7 +27,7 @@ def make_anchors(
         grid_x = torch.arange(
             width,
             device=device,
-            dtype=dtype,
+            dtype=dtype
         )
 
         grid_x = grid_x + grid_cell_offset
@@ -36,7 +36,7 @@ def make_anchors(
         grid_y = torch.arange(
             height,
             device=device,
-            dtype=dtype,
+            dtype=dtype
         )
 
         grid_y = grid_y + grid_cell_offset
@@ -45,19 +45,19 @@ def make_anchors(
         grid_y, grid_x = torch.meshgrid(
             grid_y,
             grid_x,
-            indexing="ij",
+            indexing="ij"
         )
 
         # [H, W, 2]
         points = torch.stack(
             (grid_x, grid_y),
-            dim=-1,
+            dim=-1
         )
 
         # [H, W, 2] → [H × W, 2]
         points = points.reshape(
             -1,
-            2,
+            2
         )
 
         # Save Grid points
@@ -68,7 +68,7 @@ def make_anchors(
             size=(height * width, 1),
             fill_value=float(strides[index]),
             device=device,
-            dtype=dtype,
+            dtype=dtype
         )
 
         # Save strides
@@ -83,12 +83,12 @@ def make_anchors(
     # Total: 8400
     anchor_points = torch.cat(
         anchor_points,
-        dim=0,
+        dim=0
     )
 
     stride_tensors = torch.cat(
         stride_tensors,
-        dim=0,
+        dim=0
     )
 
     # anchor_points:  [8400, 2]
@@ -100,14 +100,14 @@ def make_anchors(
 def dist2bbox(
     distance,
     anchor_points,
-    xywh=True,
+    xywh=True
 ):
 
     # Separate:
     # [left, top] and [right, bottom]
     left_top, right_bottom = distance.chunk(
         chunks=2,
-        dim=1,
+        dim=1
     )
 
     # Top-left coordinate
@@ -134,7 +134,7 @@ def dist2bbox(
         # [x, y, width, height]
         boxes = torch.cat(
             (center, width_height),
-            dim=1,
+            dim=1
         )
 
     # Return x1, y1, x2 and y2
@@ -143,7 +143,7 @@ def dist2bbox(
         # [x1, y1, x2, y2]
         boxes = torch.cat(
             (x1y1, x2y2),
-            dim=1,
+            dim=1
         )
 
     # return

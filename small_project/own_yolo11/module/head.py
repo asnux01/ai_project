@@ -12,7 +12,7 @@ class Head(nn.Module):
         num_classes,
         in_channels,
         reg_max=16,
-        strides=(8, 16, 32),
+        strides=(8, 16, 32)
     ):
 
         # nn.Module reset to use PyTorch
@@ -36,13 +36,13 @@ class Head(nn.Module):
         ch_bh = max(
             16,
             in_channels[0] // 4,
-            4 * reg_max,
+            4 * reg_max
         )
 
         # Class branch hidden channels
         ch_ch = max(
             in_channels[0],
-            min(num_classes, 100),
+            min(num_classes, 100)
         )
 
         # Create P3, P4 and P5 Box branches
@@ -56,12 +56,12 @@ class Head(nn.Module):
             box_branch = BoxBranch(
                 in_channels=channel,
                 hidden_channels=ch_bh,
-                reg_max=reg_max,
+                reg_max=reg_max
             )
 
             # Add Box branch to ModuleList
             self.box_branches.append(
-                box_branch,
+                box_branch
             )
             
         # Create P3, P4 and P5 Class branches
@@ -75,17 +75,17 @@ class Head(nn.Module):
             class_branch = ClassBranch(
                 in_channels=channel,
                 hidden_channels=ch_ch,
-                num_classes=num_classes,
+                num_classes=num_classes
             )
 
             # Add Class branch to ModuleList
             self.class_branches.append(
-                class_branch,
+                class_branch
             )
 
         # DFL Projection Block
         self.dfl = DFL(
-            reg_max=reg_max,
+            reg_max=reg_max
         )
 
     # forward
@@ -121,22 +121,22 @@ class Head(nn.Module):
 
             # Run Box branch
             box_output = box_branch(
-                feature,
+                feature
             )
 
             # Run Class branch
             class_output = class_branch(
-                feature,
+                feature
             )
 
             # Save Box output
             box_outputs.append(
-                box_output,
+                box_output
             )
 
             # Save Class output
             class_outputs.append(
-                class_output,
+                class_output
             )
 
         # --------------------------------------------------
@@ -155,12 +155,12 @@ class Head(nn.Module):
             box_output = box_output.reshape(
                 batch_size,
                 self.box_channels,
-                -1,
+                -1
             )
 
             # Save reshaped Box output
             box_reshape_outputs.append(
-                box_output,
+                box_output
             )
 
         # Connect P3, P4 and P5 Box outputs
@@ -172,7 +172,7 @@ class Head(nn.Module):
         # Result: [B, 64, 8400]
         box_logits = torch.cat(
             box_reshape_outputs,
-            dim=2,
+            dim=2
         )
 
         # --------------------------------------------------
@@ -191,12 +191,12 @@ class Head(nn.Module):
             class_output = class_output.reshape(
                 batch_size,
                 self.num_classes,
-                -1,
+                -1
             )
 
             # Save reshaped Class output
             class_reshape_outputs.append(
-                class_output,
+                class_output
             )
 
         # Connect P3, P4 and P5 Class outputs
@@ -208,7 +208,7 @@ class Head(nn.Module):
         # Result: [B, num_classes, 8400]
         class_logits = torch.cat(
             class_reshape_outputs,
-            dim=2,
+            dim=2
         )
 
         # --------------------------------------------------
@@ -218,7 +218,7 @@ class Head(nn.Module):
         raw_outputs = {
             "box_logits": box_logits,
             "class_logits": class_logits,
-            "features": features,
+            "features": features
         }
 
         # During training, return raw outputs
@@ -240,7 +240,7 @@ class Head(nn.Module):
         # Four distances:
         # left, top, right, bottom
         distance = self.dfl(
-            box_logits,
+            box_logits
         )
 
         # --------------------------------------------------
@@ -255,7 +255,7 @@ class Head(nn.Module):
         anchor_points, stride_tensor = make_anchors(
             features=features,
             strides=self.strides,
-            grid_cell_offset=0.5,
+            grid_cell_offset=0.5
         )
 
         # --------------------------------------------------
@@ -269,7 +269,7 @@ class Head(nn.Module):
         # [2, 8400]
         anchor_points = anchor_points.transpose(
             0,
-            1,
+            1
         )
 
         # Before:
@@ -278,7 +278,7 @@ class Head(nn.Module):
         # After:
         # [1, 2, 8400]
         anchor_points = anchor_points.unsqueeze(
-            0,
+            0
         )
 
         # --------------------------------------------------
@@ -292,7 +292,7 @@ class Head(nn.Module):
         # [1, 8400]
         stride_tensor = stride_tensor.transpose(
             0,
-            1,
+            1
         )
 
         # Before:
@@ -301,7 +301,7 @@ class Head(nn.Module):
         # After:
         # [1, 1, 8400]
         stride_tensor = stride_tensor.unsqueeze(
-            0,
+            0
         )
 
         # --------------------------------------------------
@@ -319,7 +319,7 @@ class Head(nn.Module):
         boxes = dist2bbox(
             distance=distance,
             anchor_points=anchor_points,
-            xywh=True,
+            xywh=True
         )
 
         # --------------------------------------------------
@@ -339,7 +339,7 @@ class Head(nn.Module):
         #         ↓
         # Class probabilities between 0 and 1
         class_probabilities = torch.sigmoid(
-            class_logits,
+            class_logits
         )
 
         # --------------------------------------------------
@@ -359,7 +359,7 @@ class Head(nn.Module):
                 boxes,
                 class_probabilities,
             ),
-            dim=1,
+            dim=1
         )
 
         # NMS is performed outside DetectHead.
