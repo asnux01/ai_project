@@ -4,8 +4,7 @@ import torch.nn as nn
 
 from ..block import BoxBranch, ClassBranch, DFL, make_anchors, dist2bbox
 
-
-class DetectHead(nn.Module):
+class Head(nn.Module):
 
     # initialize
     def __init__(
@@ -17,7 +16,7 @@ class DetectHead(nn.Module):
     ):
 
         # nn.Module reset to use PyTorch
-        super(DetectHead, self).__init__()
+        super(Head, self).__init__()
 
         # parameter
         self.num_classes = num_classes
@@ -46,10 +45,7 @@ class DetectHead(nn.Module):
             min(num_classes, 100),
         )
 
-        # --------------------------------------------------
         # Create P3, P4 and P5 Box branches
-        # --------------------------------------------------
-
         # Module container
         self.box_branches = nn.ModuleList()
 
@@ -67,11 +63,8 @@ class DetectHead(nn.Module):
             self.box_branches.append(
                 box_branch,
             )
-
-        # --------------------------------------------------
+            
         # Create P3, P4 and P5 Class branches
-        # --------------------------------------------------
-
         # Module container
         self.class_branches = nn.ModuleList()
 
@@ -90,10 +83,7 @@ class DetectHead(nn.Module):
                 class_branch,
             )
 
-        # --------------------------------------------------
         # DFL Projection Block
-        # --------------------------------------------------
-
         self.dfl = DFL(
             reg_max=reg_max,
         )
