@@ -1,7 +1,6 @@
 # import library
 import torch
 
-
 # Create Grid Points
 def make_anchors(
     features,

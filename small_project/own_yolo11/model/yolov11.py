@@ -1,5 +1,4 @@
 # import library
-import torch
 import torch.nn as nn
 
 from ..module import Backbone, Neck
