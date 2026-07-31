@@ -43,13 +43,13 @@ class Conv(nn.Module):
         activation = activation.lower()
         
         if activation == "silu":
-            self.act = nn.SiLU
+            self.act = nn.SiLU()
         elif activation == "relu":
-            self.act = nn.ReLU
+            self.act = nn.ReLU()
         else:
             self.act = nn.Identity()
         
-    # Forward
+    # forward
     def forward(self, x):
         
         # Conv
