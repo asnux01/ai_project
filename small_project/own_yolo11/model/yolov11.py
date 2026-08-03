@@ -1,16 +1,19 @@
 # import library
 import torch.nn as nn
 
-from ..module import Backbone, Neck
+from ..module import Backbone, Neck, Head
 
 class Yolov11(nn.Module):
     
     # initialized
     def __init__(
         self,
+        num_classes,
         depth_factor,
         width_factor,
         max_channels,
+        reg_max=16,
+        strides=(8,16,32)
     ):
         
         # nn.Module reset to use PyTorch
@@ -29,20 +32,25 @@ class Yolov11(nn.Module):
             depth_factor=depth_factor
         )
         
-        # Head
-        # self.head = ~~~
+        # Detect Head
+        self.head = Head(
+            num_classes=num_classes,
+            in_channels=self.neck.out_channels,
+            reg_max=reg_max,
+            strides=strides
+        )
         
     # forward
     def forward(self, x):
         
         # Backbone
-        x = self.backbone(x)
+        features = self.backbone(x)
         
         # Neck
-        x = self.neck(x)
+        features = self.neck(features)
         
         # Head
-        # x = self.head(x)
+        x = self.head(features)
         
         # return
         return x

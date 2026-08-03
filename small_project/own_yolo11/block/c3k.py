@@ -22,6 +22,7 @@ class C3K (nn.Module):
         # parameter
         ch_io = in_channels         # I/O channels
         ch_h = out_channels // 2    # hidden channels
+        ch_c = ch_h * 2             # concat channels    
         bn_cnt = n                  # bottleneck counter
         
         # branch0 Conv: bottleneck X
@@ -58,7 +59,7 @@ class C3K (nn.Module):
     
         # After concat Conv
         self.conv2 = Conv(
-            in_channels=ch_io,
+            in_channels=ch_c,
             out_channels=ch_io,
             kernel_size=1,
             stride=1,

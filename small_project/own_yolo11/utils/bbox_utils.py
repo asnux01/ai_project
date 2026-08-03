@@ -74,11 +74,9 @@ def make_anchors(
         stride_tensors.append(stride_tensor)
 
     # Connect P3, P4 and P5 Grid points
-    #
     # P3: 80×80 = 6400
     # P4: 40×40 = 1600
     # P5: 20×20 = 400
-    #
     # Total: 8400
     anchor_points = torch.cat(
         anchor_points,

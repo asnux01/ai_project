@@ -93,7 +93,6 @@ class Head(nn.Module):
     def forward(self, features):
 
         # features:
-        #
         # features[0] = P3
         # features[1] = P4
         # features[2] = P5
@@ -105,10 +104,7 @@ class Head(nn.Module):
         box_outputs = []
         class_outputs = []
 
-        # --------------------------------------------------
         # Run P3, P4 and P5 branches
-        # --------------------------------------------------
-
         for index in range(self.num_levels):
 
             # Current feature map
@@ -140,17 +136,13 @@ class Head(nn.Module):
                 class_output
             )
 
-        # --------------------------------------------------
         # Reshape Box outputs
-        # --------------------------------------------------
-
         box_reshape_outputs = []
 
         for box_output in box_outputs:
 
             # Before:
             # [B, 4 × reg_max, H, W]
-            #
             # After:
             # [B, 4 × reg_max, H × W]
             box_output = box_output.reshape(
@@ -165,28 +157,22 @@ class Head(nn.Module):
             )
 
         # Connect P3, P4 and P5 Box outputs
-        #
         # P3: [B, 64, 6400]
         # P4: [B, 64, 1600]
         # P5: [B, 64,  400]
-        #
         # Result: [B, 64, 8400]
         box_logits = torch.cat(
             box_reshape_outputs,
             dim=2
         )
 
-        # --------------------------------------------------
         # Reshape Class outputs
-        # --------------------------------------------------
-
         class_reshape_outputs = []
 
         for class_output in class_outputs:
 
             # Before:
             # [B, num_classes, H, W]
-            #
             # After:
             # [B, num_classes, H × W]
             class_output = class_output.reshape(
@@ -201,20 +187,16 @@ class Head(nn.Module):
             )
 
         # Connect P3, P4 and P5 Class outputs
-        #
         # P3: [B, num_classes, 6400]
         # P4: [B, num_classes, 1600]
         # P5: [B, num_classes,  400]
-        #
         # Result: [B, num_classes, 8400]
         class_logits = torch.cat(
             class_reshape_outputs,
             dim=2
         )
 
-        # --------------------------------------------------
         # Raw outputs
-        # --------------------------------------------------
 
         raw_outputs = {
             "box_logits": box_logits,
@@ -226,31 +208,21 @@ class Head(nn.Module):
         if self.training:
             return raw_outputs
 
-        # --------------------------------------------------
         # Inference
-        # --------------------------------------------------
-
         # DFL Projection
-        #
         # Before:
         # [B, 4 × reg_max, 8400]
-        #
         # After:
         # [B, 4, 8400]
-        #
         # Four distances:
         # left, top, right, bottom
         distance = self.dfl(
             box_logits
         )
 
-        # --------------------------------------------------
         # Create Grid points
-        # --------------------------------------------------
-
         # anchor_points:
         # [8400, 2]
-        #
         # stride_tensor:
         # [8400, 1]
         anchor_points, stride_tensor = make_anchors(
@@ -259,13 +231,9 @@ class Head(nn.Module):
             grid_cell_offset=0.5
         )
 
-        # --------------------------------------------------
         # Change Anchor point shape
-        # --------------------------------------------------
-
         # Before:
         # [8400, 2]
-        #
         # After transpose:
         # [2, 8400]
         anchor_points = anchor_points.transpose(
@@ -275,20 +243,15 @@ class Head(nn.Module):
 
         # Before:
         # [2, 8400]
-        #
         # After:
         # [1, 2, 8400]
         anchor_points = anchor_points.unsqueeze(
             0
         )
 
-        # --------------------------------------------------
         # Change Stride shape
-        # --------------------------------------------------
-
         # Before:
         # [8400, 1]
-        #
         # After transpose:
         # [1, 8400]
         stride_tensor = stride_tensor.transpose(
@@ -298,23 +261,17 @@ class Head(nn.Module):
 
         # Before:
         # [1, 8400]
-        #
         # After:
         # [1, 1, 8400]
         stride_tensor = stride_tensor.unsqueeze(
             0
         )
 
-        # --------------------------------------------------
         # Convert distances into Bounding Boxes
-        # --------------------------------------------------
-
         # Combine:
-        #
         # Grid point
         #     +
         # left, top, right, bottom distances
-        #
         # Result:
         # Feature-map coordinate boxes
         boxes = dist2bbox(
@@ -323,19 +280,13 @@ class Head(nn.Module):
             xywh=True
         )
 
-        # --------------------------------------------------
         # Apply Stride
-        # --------------------------------------------------
-
         # Feature-map coordinates
         #            ↓
         # Original-image pixel coordinates
         boxes = boxes * stride_tensor
 
-        # --------------------------------------------------
         # Calculate Class probabilities
-        # --------------------------------------------------
-
         # Raw class logits
         #         ↓
         # Class probabilities between 0 and 1
@@ -343,23 +294,16 @@ class Head(nn.Module):
             class_logits
         )
 
-        # --------------------------------------------------
         # Combine Boxes and Class probabilities
-        # --------------------------------------------------
 
         # boxes:
         # [B, 4, 8400]
-        #
         # class_probabilities:
         # [B, num_classes, 8400]
-        #
         # final_output:
         # [B, 4 + num_classes, 8400]
         final_output = torch.cat(
-            (
-                boxes,
-                class_probabilities,
-            ),
+            (boxes, class_probabilities),
             dim=1
         )
 

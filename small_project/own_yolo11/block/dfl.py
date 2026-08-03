@@ -13,6 +13,9 @@ class DFL(nn.Module):
             # nn.Module reset to use PyTorch
             super(DFL, self).__init__()
             
+            # parameter
+            self.reg_max = reg_max
+            
             # Integral Conv
             # Convert probability distribution into expected distance
             self.conv = nn.Conv2d(
@@ -75,7 +78,6 @@ class DFL(nn.Module):
 
             # Calculate expected distances
             # 0*p0 + 1*p1 + ... + (reg_max-1)*p_last
-            #
             # [B, reg_max, 4, A]
             #             ↓
             # [B, 1, 4, A]

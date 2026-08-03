@@ -15,7 +15,7 @@ class C3K2(nn.Module):
         out_channels,
         c3k,
         n,
-        shortcut,
+        shortcut=True,
         e=0.5
     ):
         
