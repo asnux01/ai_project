@@ -1,7 +1,7 @@
 # import library
 import torch.nn as nn
 
-from ..module import Backbone, Neck, Head
+from .module import Backbone, Neck, Head
 
 class Yolov11(nn.Module):
     
