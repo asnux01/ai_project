@@ -190,7 +190,7 @@ if __name__ == "__main__":
     # Model 생성
     # --------------------------------------------------
 
-    model = YOLO11(
+    model = Yolov11(
         num_classes=num_classes,
         reg_max=reg_max,
     )
