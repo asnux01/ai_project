@@ -1,11 +1,14 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch.nn as nn
 
 from ..layer import Conv
 
 class ClassBranch(nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -13,13 +16,15 @@ class ClassBranch(nn.Module):
         num_classes
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(ClassBranch, self).__init__()
         
-        # parameter
+        # 파라미터
         ch_i = in_channels
         ch_h = hidden_channels
         ch_o = num_classes
+        
+        # 포워드 접근 가능 파라미터
         self.nc = num_classes
         
         # DWConv0
@@ -61,6 +66,7 @@ class ClassBranch(nn.Module):
         )
                 
         # Conv2d
+        # 각 위치의 sigmoid 적용 전 클래스 logit 출력
         self.conv2d = nn.Conv2d(
             in_channels=ch_h,
             out_channels=ch_o,
@@ -70,7 +76,7 @@ class ClassBranch(nn.Module):
             bias=True
         )
         
-    # forward
+    # 포워드
     def forward(self, x):
         
         # class branch
@@ -80,5 +86,5 @@ class ClassBranch(nn.Module):
         x = self.conv1(x)
         x = self.conv2d(x)
         
-        # return
+        # 반환
         return x

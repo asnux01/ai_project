@@ -1,297 +1,260 @@
-# --------------------------------------------------
-# Import library
-# --------------------------------------------------
-
+# 라이브러리
 import os
 
 import torch
-
 from torch.utils.data import DataLoader
 
-
-# --------------------------------------------------
-# Import Dataset
-# --------------------------------------------------
-
-from .data import (
-    Coco2017Dataset,
-    detection_collate_fn,
-)
+from data import Coco2017Dataset, detection_collate_fn
+from loss import YOLO11DetectionLoss
+from model import Yolov11
+from training import build_optimizer, train_epoch, validate_epoch
 
 
-# --------------------------------------------------
-# Import Model
-# --------------------------------------------------
+def build_model_config(
+    num_classes,
+    scale,
+    reg_max,
+    strides,
+    image_size,
+):
+    """학습과 동일한 모델을 추론에서 재생성하는 데 필요한 설정을 만든다."""
 
-# 실제 네 프로젝트 구조에 맞게 수정
-from .model import Yolov11
-
-
-# --------------------------------------------------
-# Import Loss
-# --------------------------------------------------
-
-from .loss import YOLO11DetectionLoss
-
-
-# --------------------------------------------------
-# Import Training modules
-# --------------------------------------------------
-
-from .training import *
+    return {
+        "num_classes": int(num_classes),
+        "scale": str(scale),
+        "reg_max": int(reg_max),
+        "strides": tuple(strides),
+        "image_size": int(image_size),
+    }
 
 
-# --------------------------------------------------
-# Main
-# --------------------------------------------------
+def build_checkpoint(
+    epoch,
+    model,
+    optimizer,
+    model_config,
+    train_loss=None,
+    val_loss=None,
+):
+    """모델 설정과 상태를 하나의 checkpoint 딕셔너리로 묶는다."""
 
-if __name__ == "__main__":
+    checkpoint = {
+        # 학습 재개 시 다음 epoch를 결정하기 위한 현재 epoch
+        "epoch": int(epoch),
 
-    # --------------------------------------------------
-    # Device
-    # --------------------------------------------------
+        # 추론 시 같은 scale과 Head 설정으로
+        # 모델을 다시 만들기 위한 값
+        "model_config": dict(model_config),
 
+        # 실제 학습된 모델 파라미터
+        "model_state_dict": model.state_dict(),
+
+        # 학습 재개 시 momentum 등을 복원하기 위한
+        # optimizer 상태
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+
+    # best checkpoint에는 비교에 사용한 loss도 함께 기록
+    if train_loss is not None:
+        checkpoint["train_loss"] = train_loss
+
+    if val_loss is not None:
+        checkpoint["val_loss"] = val_loss
+
+    return checkpoint
+
+
+def main():
+    """데이터, 모델, loss, optimizer를 만들고 전체 학습을 실행한다."""
+
+    # CUDA가 사용 가능하면 GPU를,
+    # 그렇지 않으면 CPU를 선택한다.
     device = torch.device(
-        "cuda"
-        if torch.cuda.is_available()
-        else "cpu"
+        "cuda" if torch.cuda.is_available() else "cpu"
     )
-
-    print(
-        "Device:",
-        device,
-    )
-
+    print("Device:", device)
 
     # --------------------------------------------------
-    # Training Parameters
+    # 데이터 및 학습 하이퍼파라미터
     # --------------------------------------------------
 
     image_size = 640
-
     batch_size = 8
-
     epochs = 100
-
     learning_rate = 0.001
-
     weight_decay = 0.0005
 
+    # --------------------------------------------------
+    # 모델 구조 관련 설정
+    # --------------------------------------------------
+
     num_classes = 80
-
     reg_max = 16
+    strides = (8, 16, 32)
 
-    strides = (
-        8,
-        16,
-        32,
-    )
+    # depth와 width 값을 직접 입력하지 않고
+    # n, s, m, l, x 중 하나의 스케일만 선택한다.
+    scale = "n"
 
-
-    # --------------------------------------------------
-    # Checkpoint Directory
-    # --------------------------------------------------
-
+    # best.pt와 last.pt를 저장할 폴더를 준비한다.
     save_dir = "checkpoints"
-
     os.makedirs(
         save_dir,
         exist_ok=True,
     )
 
-
     # --------------------------------------------------
-    # Train Dataset
+    # Dataset
     # --------------------------------------------------
 
+    # 학습용 COCO2017 이미지와 annotation을 연결한다.
     train_dataset = Coco2017Dataset(
         image_dir=(
             "datasets/coco/images/train2017"
         ),
-
         annotation_file=(
             "datasets/coco/annotations/"
             "instances_train2017.json"
         ),
-
         image_size=image_size,
     )
 
-
-    # --------------------------------------------------
-    # Validation Dataset
-    # --------------------------------------------------
-
+    # 검증용 COCO2017 이미지와 annotation을 연결한다.
     val_dataset = Coco2017Dataset(
         image_dir=(
             "datasets/coco/images/val2017"
         ),
-
         annotation_file=(
             "datasets/coco/annotations/"
             "instances_val2017.json"
         ),
-
         image_size=image_size,
     )
 
-
     # --------------------------------------------------
-    # Train DataLoader
+    # DataLoader
     # --------------------------------------------------
 
+    # 이미지마다 annotation 개수가 다르므로
+    # 전용 collate 함수를 사용한다.
     train_loader = DataLoader(
         dataset=train_dataset,
-
-        # 한 번에 학습할 이미지 개수
         batch_size=batch_size,
-
-        # 학습 데이터 순서를 섞는다.
         shuffle=True,
 
-        # 처음에는 오류 확인이 쉬운 0 사용
+        # 먼저 동작을 확인하기 쉽도록 worker를 0으로 둔다.
         num_workers=0,
 
-        # GPU 전송을 도울 수 있다.
+        # CUDA 사용 시 page-locked memory를 사용해
+        # 전송 비용을 줄일 수 있다.
         pin_memory=torch.cuda.is_available(),
 
-        # 객체 탐지용 collate 함수
         collate_fn=detection_collate_fn,
-
-        # 마지막 batch도 사용한다.
         drop_last=False,
     )
 
-
-    # --------------------------------------------------
-    # Validation DataLoader
-    # --------------------------------------------------
-
+    # 검증 데이터의 순서는 학습에 영향을 주지 않으므로
+    # 데이터를 섞지 않는다.
     val_loader = DataLoader(
         dataset=val_dataset,
-
         batch_size=batch_size,
-
-        # Validation 데이터는
-        # 순서를 섞을 필요가 없다.
         shuffle=False,
-
         num_workers=0,
-
         pin_memory=torch.cuda.is_available(),
-
         collate_fn=detection_collate_fn,
-
         drop_last=False,
     )
 
-
     # --------------------------------------------------
-    # Model 생성
+    # Model
     # --------------------------------------------------
 
+    # 선택한 scale 이름을 모델에 전달하면
+    # 모델 내부에서 해당 스케일 계수를 조회한다.
     model = Yolov11(
         num_classes=num_classes,
+        scale=scale,
         reg_max=reg_max,
+        strides=strides,
     )
 
-    # 모델을 GPU 또는 CPU로 이동한다.
     model = model.to(device)
 
+    # 학습과 추론이 동일한 구조를 사용하도록
+    # checkpoint에 함께 저장할 설정을 만든다.
+    model_config = build_model_config(
+        num_classes=num_classes,
+        scale=model.scale,
+        reg_max=reg_max,
+        strides=strides,
+        image_size=image_size,
+    )
 
     # --------------------------------------------------
-    # Loss 생성
+    # Loss
     # --------------------------------------------------
 
+    # YOLO11의 box, class, DFL loss를
+    # 계산하는 객체를 생성한다.
     criterion = YOLO11DetectionLoss(
         num_classes=num_classes,
-
         reg_max=reg_max,
-
         strides=strides,
-
         box_gain=7.5,
-
         cls_gain=0.5,
-
         dfl_gain=1.5,
-
         tal_topk=10,
     )
 
     criterion = criterion.to(device)
 
-
     # --------------------------------------------------
-    # Optimizer 생성
+    # Optimizer
     # --------------------------------------------------
 
+    # 학습 가능한 모델 파라미터를
+    # AdamW optimizer에 등록한다.
     optimizer = build_optimizer(
         model=model,
-
         learning_rate=learning_rate,
-
         weight_decay=weight_decay,
     )
 
-
-    # --------------------------------------------------
-    # Best Validation Loss
-    # --------------------------------------------------
-
+    # 검증 total loss가 가장 작은 checkpoint를 선택한다.
     best_val_loss = float("inf")
 
-
     # --------------------------------------------------
-    # Epoch 반복
+    # Training loop
     # --------------------------------------------------
 
     for epoch in range(epochs):
-
         print()
         print(
-            f"========== "
-            f"Epoch {epoch + 1}/{epochs} "
-            f"=========="
+            f"========== Epoch "
+            f"{epoch + 1}/{epochs} =========="
         )
 
-
-        # --------------------------------------------------
-        # Train
-        # --------------------------------------------------
-
+        # 한 번의 학습 epoch에서 forward, backward,
+        # parameter update를 수행한다.
         train_loss = train_epoch(
             model=model,
-
             data_loader=train_loader,
-
             criterion=criterion,
-
             optimizer=optimizer,
-
             device=device,
         )
 
-
-        # --------------------------------------------------
-        # Validation
-        # --------------------------------------------------
-
+        # 같은 epoch의 검증 loss를
+        # gradient 갱신 없이 계산한다.
         val_loss = validate_epoch(
             model=model,
-
             data_loader=val_loader,
-
             criterion=criterion,
-
             device=device,
         )
 
-
-        # --------------------------------------------------
-        # Epoch 결과 출력
-        # --------------------------------------------------
-
+        # 네 종류의 학습 및 검증 loss를
+        # 사람이 읽기 쉬운 형태로 출력한다.
         print()
 
         print(
@@ -310,84 +273,51 @@ if __name__ == "__main__":
             f"Total: {val_loss['total_loss']:.4f}"
         )
 
+        # 이전 best보다 검증 total loss가 작아졌을 때만
+        # best.pt를 갱신한다.
+        if val_loss["total_loss"] < best_val_loss:
+            best_val_loss = val_loss["total_loss"]
 
-        # --------------------------------------------------
-        # Best Model 저장
-        # --------------------------------------------------
-
-        if (
-            val_loss["total_loss"]
-            < best_val_loss
-        ):
-
-            best_val_loss = (
-                val_loss["total_loss"]
+            checkpoint = build_checkpoint(
+                epoch=epoch + 1,
+                model=model,
+                optimizer=optimizer,
+                model_config=model_config,
+                train_loss=train_loss,
+                val_loss=val_loss,
             )
-
-            checkpoint = {
-                # 현재 Epoch
-                "epoch":
-                    epoch + 1,
-
-                # Model Parameter
-                "model_state_dict":
-                    model.state_dict(),
-
-                # Optimizer 상태
-                "optimizer_state_dict":
-                    optimizer.state_dict(),
-
-                # Training Loss
-                "train_loss":
-                    train_loss,
-
-                # Validation Loss
-                "val_loss":
-                    val_loss,
-            }
 
             torch.save(
                 checkpoint,
-
                 os.path.join(
                     save_dir,
                     "best.pt",
                 ),
             )
 
-            print(
-                "Best model saved."
-            )
+            print("Best model saved.")
 
-
-    # --------------------------------------------------
-    # Last Model 저장
-    # --------------------------------------------------
-
-    last_checkpoint = {
-        "epoch":
-            epochs,
-
-        "model_state_dict":
-            model.state_dict(),
-
-        "optimizer_state_dict":
-            optimizer.state_dict(),
-    }
+    # 최종 epoch의 상태는 성능과 관계없이
+    # last.pt로 저장한다.
+    last_checkpoint = build_checkpoint(
+        epoch=epochs,
+        model=model,
+        optimizer=optimizer,
+        model_config=model_config,
+    )
 
     torch.save(
         last_checkpoint,
-
         os.path.join(
             save_dir,
             "last.pt",
         ),
     )
 
-
-    # --------------------------------------------------
-    # Training 종료
-    # --------------------------------------------------
-
     print()
     print("Training completed.")
+
+
+# 이 파일을 직접 실행했을 때만 학습을 시작한다.
+if __name__ == "__main__":
+    main()

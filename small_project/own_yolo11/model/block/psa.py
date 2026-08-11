@@ -1,4 +1,7 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch.nn as nn
 
 from ..layer import Conv
@@ -6,7 +9,7 @@ from .attention import Attention
 
 class PSABlock(nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -16,13 +19,13 @@ class PSABlock(nn.Module):
         shortcut=True
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(PSABlock, self).__init__()
         
-        # parameter
-        ch_i = in_channels          # input channels
-        ch_h = 2 * out_channels     # hidden channels
-        ch_o = out_channels         # output channels
+        # 파라미터
+        ch_i = in_channels          # 입력 채널 수
+        ch_h = 2 * out_channels     # hidden 채널 수
+        ch_o = out_channels         # 출력 채널 수
         
         # Attention
         self.attention = Attention(
@@ -60,7 +63,7 @@ class PSABlock(nn.Module):
         # FFN shortcut
         self.ffn_shortcut = shortcut
     
-    # forward
+    # 포워드
     def forward(self, x):
         
         # Attention residual
@@ -84,5 +87,5 @@ class PSABlock(nn.Module):
         if self.ffn_shortcut:
             x = res + x
         
-        # return
+        # 반환
         return x

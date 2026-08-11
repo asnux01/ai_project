@@ -1,11 +1,14 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch.nn as nn
 
 from ..layer import Conv
 
 class BoxBranch(nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -13,15 +16,15 @@ class BoxBranch(nn.Module):
         reg_max=16
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(BoxBranch, self).__init__()
         
-        # parameter
+        # 채널 파라미터
         ch_i = in_channels
         ch_h = hidden_channels
         ch_o = 4 * reg_max
         
-        # Conv0
+        # 첫 번째Conv
         self.conv0 = Conv(
             in_channels=ch_i,
             out_channels=ch_h,
@@ -30,7 +33,7 @@ class BoxBranch(nn.Module):
             padding=1
         )
         
-        # Conv1
+        # 두 번째 Conv
         self.conv1 = Conv(
             in_channels=ch_h,
             out_channels=ch_h,
@@ -40,6 +43,7 @@ class BoxBranch(nn.Module):
         )
         
         # Conv2d
+        # Left, top, right, bottom의 logit 출력
         self.conv2d = nn.Conv2d(
             in_channels=ch_h,
             out_channels=ch_o,
@@ -49,7 +53,7 @@ class BoxBranch(nn.Module):
             bias=True
         )
         
-    # forward
+    # 포워드
     def forward(self, x):
         
         # box branch
@@ -57,5 +61,5 @@ class BoxBranch(nn.Module):
         x = self.conv1(x)
         x = self.conv2d(x)
         
-        # return
+        # 반환
         return x

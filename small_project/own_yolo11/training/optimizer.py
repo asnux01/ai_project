@@ -1,14 +1,8 @@
-# --------------------------------------------------
-# Import library
-# --------------------------------------------------
-
+# 라이브러리
 import torch
 
 
-# --------------------------------------------------
 # Optimizer 생성 함수
-# --------------------------------------------------
-
 def build_optimizer(
     model,
     learning_rate=0.001,
@@ -44,40 +38,43 @@ def build_optimizer(
         optimizer:
             생성된 AdamW Optimizer
     """
+    # 유효성 검사
+    # 잘못된 하이퍼파라미터가 optimizer 내부에서
+    # 늦게 실패하지 않도록 미리 검사
+    if learning_rate <= 0:
+        raise ValueError(
+            "learning_rate는 0보다 커야 합니다."
+        )
 
-    # --------------------------------------------------
+    if weight_decay < 0:
+        raise ValueError(
+            "weight_decay는 0 이상이어야 합니다."
+        )
+        
     # 학습 가능한 Parameter 선택
-    # --------------------------------------------------
-
     # requires_grad=True인 Parameter만 가져온다.
-    #
-    # Backbone, Neck, Head 중 일부를 freeze한 경우,
-    # freeze된 Parameter는 Optimizer에서 제외된다.
+    # freeze된 파라미터는 optimizer에서 제외
     trainable_parameters = [
         parameter
         for parameter in model.parameters()
         if parameter.requires_grad
     ]
+    
+    # 모든 파라미터가 freeze된 경우
+    # 의미 없는 optimizer 생성 방해
+    if not trainable_parameters:
+        raise ValueError(
+            "학습 가능한 모델 파라미터가 없습니다."
+        )
 
 
-    # --------------------------------------------------
     # AdamW Optimizer 생성
-    # --------------------------------------------------
-
     optimizer = torch.optim.AdamW(
-        # Optimizer가 실제로 수정할 모델 Parameter
         params=trainable_parameters,
-
-        # Learning rate
         lr=learning_rate,
-
-        # Weight decay
         weight_decay=weight_decay,
     )
 
 
-    # --------------------------------------------------
     # 생성된 Optimizer 반환
-    # --------------------------------------------------
-
     return optimizer

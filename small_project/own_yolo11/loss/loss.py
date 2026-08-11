@@ -1,5 +1,5 @@
 # --------------------------------------------------
-# Import library
+# 라이브러리
 # --------------------------------------------------
 
 import torch
@@ -15,10 +15,7 @@ from ultralytics.utils.tal import (
 )
 
 
-# --------------------------------------------------
-# Distribution Focal Loss
-# --------------------------------------------------
-
+# 연속 거리 target을 인접한 두 분포 구간으로 학습하는 DFL
 class DistributionFocalLoss(nn.Module):
 
     def __init__(
@@ -55,7 +52,7 @@ class DistributionFocalLoss(nn.Module):
                 [positive_count, 1]
         """
 
-        # target이 DFL 범위를 벗어나지 않게 제한한다.
+        # target이 DFL 범위를 벗어나지 않게 제한
         target_distance = target_distance.clamp(
             min=0,
             max=self.reg_max - 1 - 0.01,
@@ -101,7 +98,7 @@ class DistributionFocalLoss(nn.Module):
             target_right.shape
         )
 
-        # 두 정수 위치의 Loss를 거리 비율에 따라 합친다.
+        # 두 정수 위치의 Loss를 거리 비율에 따라 합침
         loss = (
             loss_left * weight_left
             + loss_right * weight_right
@@ -116,10 +113,7 @@ class DistributionFocalLoss(nn.Module):
         return loss
 
 
-# --------------------------------------------------
-# Bounding Box Loss
-# --------------------------------------------------
-
+# positive prediction의 CIoU와 DFL을 계산하는 박스 loss
 class BoundingBoxLoss(nn.Module):
 
     def __init__(
@@ -212,14 +206,14 @@ class BoundingBoxLoss(nn.Module):
         # --------------------------------------------------
 
         # 정답 박스를 anchor point 기준의
-        # left, top, right, bottom 거리로 변환한다.
+        # left, top, right, bottom 거리로 변환
         target_distance = bbox2dist(
             anchor_points,
             target_boxes,
             self.reg_max - 1,
         )
 
-        # Positive prediction만 선택한다.
+        # Positive prediction만 선택
         positive_distribution = pred_distribution[
             foreground_mask
         ]
@@ -252,10 +246,7 @@ class BoundingBoxLoss(nn.Module):
         return box_loss, dfl_loss
 
 
-# --------------------------------------------------
-# YOLO11 Detection Loss
-# --------------------------------------------------
-
+# target 할당과 세 loss 결합을 담당하는 전체 detection loss
 class YOLO11DetectionLoss(nn.Module):
 
     def __init__(
@@ -270,38 +261,29 @@ class YOLO11DetectionLoss(nn.Module):
     ):
         super().__init__()
 
-        # --------------------------------------------------
-        # Model parameters
-        # --------------------------------------------------
-
+        # 모델 출력 구조와 anchor 생성에 필요한 파라미터
         self.num_classes = num_classes
         self.reg_max = reg_max
         self.strides = strides
 
-        # --------------------------------------------------
-        # Loss weights
-        # --------------------------------------------------
-
+        # 최종 loss에 곱할 box, class, DFL 가중치
         self.box_gain = box_gain
         self.cls_gain = cls_gain
         self.dfl_gain = dfl_gain
 
-        # Classification Loss
+        # 각 분류 logit에 적용할 BCE loss
         self.classification_loss = (
             nn.BCEWithLogitsLoss(
                 reduction="none",
             )
         )
 
-        # Box and DFL Loss
+        # positive 박스의 CIoU 및 DFL을 계산하는 객체
         self.bounding_box_loss = BoundingBoxLoss(
             reg_max=reg_max,
         )
 
-        # --------------------------------------------------
-        # Task-Aligned Assigner
-        # --------------------------------------------------
-
+        # 예측과 정답을 연결하는 Task-Aligned Assigner
         self.assigner = TaskAlignedAssigner(
             topk=tal_topk,
             num_classes=num_classes,
@@ -310,8 +292,7 @@ class YOLO11DetectionLoss(nn.Module):
             stride=list(strides),
         )
 
-        # DFL projection values
-        #
+        # DFL 분포를 거리 기댓값으로 변환할 고정 구간 값
         # reg_max=16:
         # [0, 1, 2, ..., 15]
         self.register_buffer(
@@ -323,10 +304,7 @@ class YOLO11DetectionLoss(nn.Module):
             persistent=False,
         )
 
-    # --------------------------------------------------
-    # Target preprocessing
-    # --------------------------------------------------
-
+    # 이미지별 가변 길이 target을 batch tensor 형식으로 변환
     def prepare_targets(
         self,
         targets,
@@ -405,7 +383,7 @@ class YOLO11DetectionLoss(nn.Module):
             dtype=torch.bool,
         )
 
-        # 각 이미지의 target을 Tensor에 저장한다.
+        # 각 이미지의 target을 Tensor에 저장
         for batch_index, target in enumerate(targets):
 
             object_count = target["labels"].shape[0]
@@ -443,10 +421,7 @@ class YOLO11DetectionLoss(nn.Module):
             valid_mask,
         )
 
-    # --------------------------------------------------
-    # DFL box decode
-    # --------------------------------------------------
-
+    # DFL 분포 logit을 feature-map 좌표의 xyxy 박스로 복원
     def decode_boxes(
         self,
         anchor_points,
@@ -467,9 +442,7 @@ class YOLO11DetectionLoss(nn.Module):
         anchor_count = pred_distribution.shape[1]
 
         # [B, N, 4 x reg_max]
-        #
         # ↓
-        #
         # [B, N, 4, reg_max]
         pred_distribution = pred_distribution.reshape(
             batch_size,
@@ -487,12 +460,9 @@ class YOLO11DetectionLoss(nn.Module):
             dtype=pred_distribution.dtype
         )
 
-        # 확률분포의 기대값을 계산한다.
-        #
+        # 확률분포의 기대값을 계산
         # [B, N, 4, reg_max]
-        #
         # ↓
-        #
         # [B, N, 4]
         distance = torch.matmul(
             pred_distribution,
@@ -500,7 +470,7 @@ class YOLO11DetectionLoss(nn.Module):
         )
 
         # anchor point와 ltrb 거리를 이용하여
-        # xyxy 박스를 만든다.
+        # xyxy 박스를 생성
         boxes = dist2bbox(
             distance,
             anchor_points,
@@ -509,10 +479,7 @@ class YOLO11DetectionLoss(nn.Module):
 
         return boxes
 
-    # --------------------------------------------------
-    # Loss calculation
-    # --------------------------------------------------
-
+    # raw model output과 target으로 전체 detection loss를 계산
     def forward(
         self,
         predictions,
@@ -557,14 +524,9 @@ class YOLO11DetectionLoss(nn.Module):
             "features"
         ]
 
-        # --------------------------------------------------
-        # Prediction shape conversion
-        # --------------------------------------------------
-
+        # Box/Class 출력을 위치가 두 번째 차원이 되도록 변환
         # [B, 4 × reg_max, N]
-        #
         # ↓
-        #
         # [B, N, 4 × reg_max]
         pred_distribution = box_logits.permute(
             0,
@@ -573,9 +535,7 @@ class YOLO11DetectionLoss(nn.Module):
         ).contiguous()
 
         # [B, num_classes, N]
-        #
         # ↓
-        #
         # [B, N, num_classes]
         pred_scores = class_logits.permute(
             0,
@@ -587,10 +547,7 @@ class YOLO11DetectionLoss(nn.Module):
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
 
-        # --------------------------------------------------
-        # Create anchor points and stride values
-        # --------------------------------------------------
-
+        # P3, P4, P5의 anchor 중심점과 stride 값을 생성
         anchor_points, stride_tensor = make_anchors(
             features,
             self.strides,
@@ -607,10 +564,7 @@ class YOLO11DetectionLoss(nn.Module):
             dtype=dtype,
         )
 
-        # --------------------------------------------------
-        # Prepare ground truth
-        # --------------------------------------------------
-
+        # 이미지별 ground truth를 batch tensor로 정리
         (
             gt_labels,
             gt_boxes,
@@ -622,20 +576,14 @@ class YOLO11DetectionLoss(nn.Module):
             dtype=dtype,
         )
 
-        # --------------------------------------------------
-        # Decode predicted boxes
-        # --------------------------------------------------
-
+        # 예측 분포를 feature-map 좌표의 박스로 복원
         # Feature-map 좌표계의 xyxy 박스
         pred_boxes = self.decode_boxes(
             anchor_points=anchor_points,
             pred_distribution=pred_distribution,
         )
 
-        # --------------------------------------------------
-        # Assign ground truth
-        # --------------------------------------------------
-
+        # Task-Aligned Assigner로 positive prediction의 정답을 결정
         # TaskAlignedAssigner에는 원본 이미지 픽셀 좌표로
         # 예측 박스와 anchor point를 전달한다.
         (
@@ -670,10 +618,7 @@ class YOLO11DetectionLoss(nn.Module):
             min=1.0
         )
 
-        # --------------------------------------------------
-        # Classification Loss
-        # --------------------------------------------------
-
+        # 전체 위치에 대한 classification BCE loss를 계산
         cls_loss = self.classification_loss(
             pred_scores,
             assigned_scores,
@@ -685,7 +630,6 @@ class YOLO11DetectionLoss(nn.Module):
         )
 
         # Box와 DFL Loss의 초기값
-        #
         # 0이지만 pred_distribution과 연결돼 있어
         # gradient graph가 유지된다.
         box_loss = (
@@ -696,14 +640,11 @@ class YOLO11DetectionLoss(nn.Module):
             pred_distribution.sum() * 0.0
         )
 
-        # --------------------------------------------------
-        # Box Loss and DFL
-        # --------------------------------------------------
-
+        # Positive prediction이 있을 때만 box와 DFL을 계산
         if foreground_mask.any():
 
             # assigned_boxes는 원본 이미지 픽셀 좌표이므로
-            # stride로 나누어 feature-map 좌표로 변환한다.
+            # stride로 나누어 feature-map 좌표로 변환
             assigned_boxes = (
                 assigned_boxes
                 / stride_tensor
@@ -721,10 +662,7 @@ class YOLO11DetectionLoss(nn.Module):
                 )
             )
 
-        # --------------------------------------------------
-        # Apply Loss gains
-        # --------------------------------------------------
-
+        # 각 loss에 설정한 가중치를 적용
         weighted_box_loss = (
             box_loss * self.box_gain
         )
@@ -737,14 +675,14 @@ class YOLO11DetectionLoss(nn.Module):
             dfl_loss * self.dfl_gain
         )
 
-        # 전체 Loss
+        # 세 loss를 합쳐 역전파에 사용할 전체 loss를 생성
         total_loss = (
             weighted_box_loss
             + weighted_cls_loss
             + weighted_dfl_loss
         )
 
-        # 기록용 값은 gradient graph에서 분리한다.
+        # 기록용 값은 gradient graph에서 분리한
         loss_items = {
             "box_loss": (
                 weighted_box_loss.detach()

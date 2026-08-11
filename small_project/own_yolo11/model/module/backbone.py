@@ -1,4 +1,7 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch.nn as nn
 
 from ..layer import Conv
@@ -6,7 +9,7 @@ from ..block import C3K2, C2PSA, SPPF
 
 class Backbone(nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         depth_factor,
@@ -15,21 +18,42 @@ class Backbone(nn.Module):
         shortcut=True
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(Backbone, self).__init__()
         
-        # parameter
-        # channels
-        ch_min64 = min(64, max_channels) * width_factor
-        ch_min128 = min(128, max_channels) * width_factor
-        ch_min256 = min(256, max_channels) * width_factor
-        ch_min512 = min(512, max_channels) * width_factor
-        ch_min1024 = min(1024, max_channels) * width_factor
+        # 파라미터
+        # 파라미터 유효성 검사
+        # 잘못된 depth 설정으로 반복 블록이 사라지는 것을 방지
+        if depth_factor <= 0:
+            raise ValueError(
+                "depth_factor는 0보다 커야 합니다."
+            )
+
+        # 잘못된 width 설정으로 0채널 Conv가 생성되는 것을 방지
+        if width_factor <= 0:
+            raise ValueError(
+                "width_factor는 0보다 커야 합니다."
+            )
+
+        if max_channels <= 0:
+            raise ValueError(
+                "max_channels는 0보다 커야 합니다."
+            )
         
-        # counter factor
-        n = 2 * depth_factor
+        # 채널 파라미터
+        # 채널 수가 0이 되는걸 방지
+        ch_min64 = max(int(min(64, max_channels) * width_factor), 1)
+        ch_min128 = max(int(min(128, max_channels) * width_factor), 1)
+        ch_min256 = max(int(min(256, max_channels) * width_factor), 1)
+        ch_min512 = max(int(min(512, max_channels) * width_factor), 1)
+        ch_min1024 = max(int(min(1024, max_channels) * width_factor), 1)
         
-        # output channels
+        # 카운터
+        # 정수로 변환하고 반복 회수를 최소 1로 설정
+        n = max(int(2 * depth_factor), 1)
+        
+        # 포워드 접근 가능 파라미터
+        # 출력 채널 수
         self.out_channels = [
             ch_min256,
             ch_min512,
@@ -135,7 +159,7 @@ class Backbone(nn.Module):
             shortcut=shortcut,
         )
         
-    # forward
+    # 포워드
     def forward(self, x):
         
         # stage 1
@@ -164,5 +188,5 @@ class Backbone(nn.Module):
         x = self.c2psa(x)
         y2 = x
         
-        # return
+        # 반환
         return [y0, y1, y2]

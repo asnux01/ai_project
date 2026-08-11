@@ -1,4 +1,7 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch
 import torch.nn as nn
 
@@ -7,7 +10,7 @@ from .bottleneck import Bottleneck
 
 class C3K (nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -16,27 +19,43 @@ class C3K (nn.Module):
         shortcut=True
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(C3K, self).__init__()
         
-        # parameter
-        ch_io = in_channels         # I/O channels
-        ch_h = out_channels // 2    # hidden channels
-        ch_c = ch_h * 2             # concat channels    
-        bn_cnt = n                  # bottleneck counter
+        # 파라미터
+        ch_i = in_channels          # 입력 채널 수
+        ch_o = out_channels         # 출력 채널 수   
+        bn_cnt = n                  # bottleneck 카운터
         
-        # branch0 Conv: bottleneck X
+        # 파라미터 유효성 검사
+        # 0채널 Conv가 생성되는 것을 방지
+        if (ch_i <= 0 or ch_o <= 0):
+            raise ValueError(
+                "in_channels와 out_channels는 "
+                "1 이상이어야 합니다."
+            )
+        
+        # Bottleneck이 한 번도 실행되지 않는 것을 방지
+        if bn_cnt <= 0:
+            raise ValueError(
+                "n은 1 이상의 정수여야 합니다."
+            )
+        
+        ch_h = out_channels // 2    # hidden 채널 수
+        ch_c = ch_h * 2             # concat 채널 수 
+        
+        # 첫 번째 분기 Conv: bottleneck 통과 안 함
         self.conv0 = Conv(
-            in_channels=ch_io,
+            in_channels=ch_i,
             out_channels=ch_h,
             kernel_size=1,
             stride=1,
             padding=0
         )
         
-        # branch1 Conv: bottleneck O
+        # 두 번째 Conv: bottleneck 통과
         self.conv1 = Conv(
-            in_channels=ch_io,
+            in_channels=ch_i,
             out_channels=ch_h,
             kernel_size=1,
             stride=1,
@@ -57,10 +76,10 @@ class C3K (nn.Module):
                 
             self.bottlenecks.append(bottleneck)
     
-        # After concat Conv
+        # concat 이후 Conv
         self.conv2 = Conv(
             in_channels=ch_c,
-            out_channels=ch_io,
+            out_channels=ch_o,
             kernel_size=1,
             stride=1,
             padding=0
@@ -69,10 +88,10 @@ class C3K (nn.Module):
     # forward
     def forward(self, x):
         
-        # branch0 Conv
+        # 첫 번째 분기 Conv
         x0 = self.conv0(x)
         
-        # branch1 Conv
+        # 두 번째 분기 Conv
         x1 = self.conv1(x)
         
         # Bottleneck
@@ -85,8 +104,8 @@ class C3K (nn.Module):
             dim=1
         )
         
-        # after concat Conv
+        # concat 이후 Conv
         x = self.conv2(x)
         
-        # return
+        # 반환
         return x

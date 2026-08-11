@@ -1,11 +1,13 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
 import torch.nn as nn
 
 from ..layer import Conv
 
 class Attention(nn.Module):
     
-    # initialized
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -14,36 +16,39 @@ class Attention(nn.Module):
         attn_ratio =0.5
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(Attention, self).__init__()
         
-        # parameter
-        ch_i = in_channels      # input channels
-        ch_o = out_channels     # output channels
-        head_cnt = num_heads    # attention head counter
+        # 파라미터
+        ch_i = in_channels      # 입력 채널
+        ch_o = out_channels     # 출력 채널
+        head_cnt = num_heads    # attention head 카운터
         
-        # save parameter
+        # 포워드 접근 가능 파라미터 
+        # 출력 파라미터
         self.out_channels = ch_o
+        
+        # attention head 카운터
         self.num_heads = head_cnt
         
-        # channels per attetion head
+        # 각 attention head의 출력 채널
         self.head_dim = ch_o // head_cnt
         
-        # Query and Key channels per attention head
+        # Query와 Key 채널 수
         self.qk_dim = int(
             self.head_dim * attn_ratio
         )
         
-        # attention score scale
+        # Attention score(Query와 Key 내적 크기 억제)
         self.scale = self.qk_dim ** -0.5
         
-        # total Query or Key channels
+        # 모든 head의 Query 또는 Key 채널 수
         qk_channels = (
             self.qk_dim
             * head_cnt
         )
         
-        # QKV Conv output channels
+        # QKV Conv 출력 채널 수
         qkv_channels = (
             qk_channels
             + qk_channels
@@ -51,8 +56,9 @@ class Attention(nn.Module):
         )
         
         # QKV Conv
-        # input: [B, ch, H, W]
-        # output: [B, qkv_channels, H, W]
+        # 입력: [B, ch, H, W]
+        # 출력: [B, qkv_channels, H, W]
+        # projection 역할이므로 활성화는 사용 x
         self.qkv = Conv(
             in_channels=ch_i,
             out_channels=qkv_channels,
@@ -75,7 +81,7 @@ class Attention(nn.Module):
             activation="identity"
         )
         
-        # Projection Conv
+        # Attention 결과를 최종 Conv로 projection
         self.proj = Conv(
             in_channels=ch_o,
             out_channels=ch_o,
@@ -85,34 +91,29 @@ class Attention(nn.Module):
             activation="identity"
         )
         
-    # forward
+    # 포워드
     def forward(self, x):
         
-        # tensor size
-        # B: batch size
-        # C: channels
-        # H: height
-        # W: width
+        # 입력 텐서: [B, C, H, W]
+        # B: 배치(Batch) 크기
+        # C: 채널 수
+        # H: 높이
+        # W: 너비
         B, _, H, W = x.shape
         
         # output channels
         C = self.out_channels
         
-        # spatial position counter
+        # 모든 공간 위치를 하나의 sequence 길이로 취급
         N = H * W
         
         # QKV Conv
         x_qkv = self.qkv(x)
         
-        # Reshape
+        # 텐서 형태 변환
         # [B, qkv_channels, H, W]
         # ->
-        # [
-        #     B,
-        #     num_heads,
-        #     key_dim + key_dim + head_dim,
-        #     N
-        # ]
+        # [B, num_heads, 2 * qk_dim + head_dim, N]
         x_qkv = x_qkv.view(
             B,
             self.num_heads,
@@ -120,10 +121,9 @@ class Attention(nn.Module):
             N
         )
         
-        # Split Query, Key and Value
-        #
-        # q: [B, num_heads, key_dim, N]
-        # k: [B, num_heads, key_dim, N]
+        # Query, Key, Value 분리
+        # q: [B, num_heads, qk_dim, N]
+        # k: [B, num_heads, qk_dim, N]
         # v: [B, num_heads, head_dim, N]
         q, k, v = x_qkv.split(
             [
@@ -136,11 +136,11 @@ class Attention(nn.Module):
         
         # Attention score
         # q:
-        # [B, num_heads, key_dim, N]
+        # [B, num_heads, qk_dim, N]
         # q transpose:
-        # [B, num_heads, N, key_dim]
+        # [B, num_heads, N, qk_dim]
         # k:
-        # [B, num_heads, key_dim, N]
+        # [B, num_heads, qk_dim, N]
         # attention:
         # [B, num_heads, N, N]
         attention = (
@@ -152,16 +152,16 @@ class Attention(nn.Module):
             dim=-1
         )
         
-        # Apply attention weights to Value
+        # attention weights를 Value에 가중
         #
-        # output:
+        # 결과:
         # [B, num_heads, head_dim, N]
         x = (
             v
             @ attention.transpose(-2, -1)
         )
         
-        # Combine attention heads
+        # attention head들을 결합
         #
         # [B, num_heads, head_dim, N]
         #
@@ -175,7 +175,7 @@ class Attention(nn.Module):
             W
         )
         
-        # Restore Value feature map
+        # Value도 원래 형태로 복원
         value_feature = v.reshape(
             B,
             C,
@@ -196,5 +196,5 @@ class Attention(nn.Module):
         # Projection Conv
         x = self.proj(x)
         
-        # return
+        # 반환
         return x

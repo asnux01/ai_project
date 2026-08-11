@@ -1,4 +1,7 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch
 import torch.nn as nn
 
@@ -7,7 +10,7 @@ from ..utils import make_anchors, dist2bbox
 
 class Head(nn.Module):
 
-    # initialize
+    # 초기화
     def __init__(
         self,
         num_classes,
@@ -16,134 +19,120 @@ class Head(nn.Module):
         strides=(8, 16, 32)
     ):
 
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(Head, self).__init__()
 
-        # parameter
+        # 파라미터
         self.num_classes = num_classes
         self.reg_max = reg_max
         self.strides = strides
         self.num_levels = len(in_channels)
 
-        # Number of Box branch output channels
-        #
+        # 포워드 접근 가능 파라미터
+        # 박스 거리 분포 채널 수
         # reg_max=16
         # left, top, right, bottom × 16
-        #
         # 4 × 16 = 64
         self.box_channels = 4 * reg_max
 
-        # Box branch hidden channels
+        # 박스 분기의 hidden 채널 수
         ch_bh = max(
             16,
             in_channels[0] // 4,
             4 * reg_max
         )
 
-        # Class branch hidden channels
+        # 분류 분기의 hidden 채널 수
         ch_ch = max(
             in_channels[0],
             min(num_classes, 100)
         )
 
-        # Create P3, P4 and P5 Box branches
-        # Module container
+        # P3, P4, P5에 독립적인 박스 분기를 생성
         self.box_branches = nn.ModuleList()
-
-        # Create one Box branch for each feature map
+        
         for channel in in_channels:
 
-            # Create Box branch
             box_branch = BoxBranch(
                 in_channels=channel,
                 hidden_channels=ch_bh,
                 reg_max=reg_max
             )
-
-            # Add Box branch to ModuleList
-            self.box_branches.append(
-                box_branch
-            )
             
-        # Create P3, P4 and P5 Class branches
-        # Module container
+            self.box_branches.append(box_branch)
+            
+        # P3, P4, P5에 독립적인 분류 분기를 생성
         self.class_branches = nn.ModuleList()
 
-        # Create one Class branch for each feature map
         for channel in in_channels:
 
-            # Create Class branch
             class_branch = ClassBranch(
                 in_channels=channel,
                 hidden_channels=ch_ch,
                 num_classes=num_classes
             )
 
-            # Add Class branch to ModuleList
-            self.class_branches.append(
-                class_branch
-            )
+            self.class_branches.append(class_branch)
 
-        # DFL Projection Block
+        # DFL 블록
         self.dfl = DFL(
             reg_max=reg_max
         )
 
-    # forward
+    # 포워드
     def forward(self, features):
 
-        # features:
+        # features 순서
         # features[0] = P3
         # features[1] = P4
         # features[2] = P5
 
-        # Batch size
+        # 배치 크기
         batch_size = features[0].shape[0]
 
-        # Result containers
+        # 결과 저장 리스트
         box_outputs = []
         class_outputs = []
 
-        # Run P3, P4 and P5 branches
+        # 각 특징 단계의 Box/Class 분기를 실행
         for index in range(self.num_levels):
 
-            # Current feature map
+            # 현재 특징 맵
             feature = features[index]
 
-            # Current Box branch
+            # 현재 박스 분기
             box_branch = self.box_branches[index]
 
-            # Current Class branch
+            # 현재 분류 분기
             class_branch = self.class_branches[index]
 
-            # Run Box branch
+            # 박스 분기 실행
             box_output = box_branch(
                 feature
             )
 
-            # Run Class branch
+            # 분류 분기 실행
             class_output = class_branch(
                 feature
             )
 
-            # Save Box output
+            # 박스 출력 저장
             box_outputs.append(
                 box_output
             )
 
-            # Save Class output
+            # 분류 출력 저장 
             class_outputs.append(
                 class_output
             )
 
-        # Reshape Box outputs
+        # 각 단계의 박스 출력 평탄화
         box_reshape_outputs = []
 
         for box_output in box_outputs:
 
-            # Before:
             # [B, 4 × reg_max, H, W]
-            # After:
+            #           ->
             # [B, 4 × reg_max, H × W]
             box_output = box_output.reshape(
                 batch_size,
@@ -151,12 +140,12 @@ class Head(nn.Module):
                 -1
             )
 
-            # Save reshaped Box output
+            # 평탄화된 박스 출력 저장
             box_reshape_outputs.append(
                 box_output
             )
 
-        # Connect P3, P4 and P5 Box outputs
+        # P3, P4, P5의 모든 박스 위치를 연결
         # P3: [B, 64, 6400]
         # P4: [B, 64, 1600]
         # P5: [B, 64,  400]
@@ -166,14 +155,13 @@ class Head(nn.Module):
             dim=2
         )
 
-        # Reshape Class outputs
+        # 각 단계의 분류 출력 평탄화
         class_reshape_outputs = []
 
         for class_output in class_outputs:
 
-            # Before:
             # [B, num_classes, H, W]
-            # After:
+            #          ->
             # [B, num_classes, H × W]
             class_output = class_output.reshape(
                 batch_size,
@@ -181,12 +169,12 @@ class Head(nn.Module):
                 -1
             )
 
-            # Save reshaped Class output
+            # 평탄화된 분류 출력 저장
             class_reshape_outputs.append(
                 class_output
             )
 
-        # Connect P3, P4 and P5 Class outputs
+        # P3, P4, P5의 모든 분류 위치를 연결
         # P3: [B, num_classes, 6400]
         # P4: [B, num_classes, 1600]
         # P5: [B, num_classes,  400]
@@ -196,7 +184,7 @@ class Head(nn.Module):
             dim=2
         )
 
-        # Raw outputs
+        # 학습용 원본 데이터 저장
 
         raw_outputs = {
             "box_logits": box_logits,
@@ -204,23 +192,21 @@ class Head(nn.Module):
             "features": features
         }
 
-        # During training, return raw outputs
+        # 학습용 데이터 반환
         if self.training:
             return raw_outputs
 
         # Inference
         # DFL Projection
-        # Before:
         # [B, 4 × reg_max, 8400]
-        # After:
+        #           ->
         # [B, 4, 8400]
-        # Four distances:
-        # left, top, right, bottom
+        # 거리 분포를 ltrb 거리로 변환
         distance = self.dfl(
             box_logits
         )
 
-        # Create Grid points
+        # 중심 좌표와 stride 생성
         # anchor_points:
         # [8400, 2]
         # stride_tensor:
@@ -231,62 +217,57 @@ class Head(nn.Module):
             grid_cell_offset=0.5
         )
 
-        # Change Anchor point shape
-        # Before:
+        # 중심 좌표 차원 변환
         # [8400, 2]
-        # After transpose:
+        #    ->
         # [2, 8400]
         anchor_points = anchor_points.transpose(
             0,
             1
         )
 
-        # Before:
         # [2, 8400]
-        # After:
+        #     ->
         # [1, 2, 8400]
         anchor_points = anchor_points.unsqueeze(
             0
         )
 
-        # Change Stride shape
-        # Before:
+        # stride 차원 변환
         # [8400, 1]
-        # After transpose:
+        #    ->
         # [1, 8400]
         stride_tensor = stride_tensor.transpose(
             0,
             1
         )
 
-        # Before:
         # [1, 8400]
-        # After:
+        #     ->
         # [1, 1, 8400]
         stride_tensor = stride_tensor.unsqueeze(
             0
         )
 
-        # Convert distances into Bounding Boxes
-        # Combine:
+        # 중심 좌표와 네 방향 거리를 xywh로 변환
         # Grid point
         #     +
         # left, top, right, bottom distances
-        # Result:
-        # Feature-map coordinate boxes
+        #               ->
+        # x, y, weight, height
         boxes = dist2bbox(
             distance=distance,
             anchor_points=anchor_points,
             xywh=True
         )
 
-        # Apply Stride
+        # stride로 feature-map 좌표를 픽셀 좌표로 변환
         # Feature-map coordinates
         #            ↓
         # Original-image pixel coordinates
         boxes = boxes * stride_tensor
 
-        # Calculate Class probabilities
+        # 분류 logit을 0~1 범위의 확률로 변환
         # Raw class logits
         #         ↓
         # Class probabilities between 0 and 1
@@ -294,8 +275,7 @@ class Head(nn.Module):
             class_logits
         )
 
-        # Combine Boxes and Class probabilities
-
+        # 박스 출력과 분류 출력을 합침
         # boxes:
         # [B, 4, 8400]
         # class_probabilities:
@@ -307,5 +287,5 @@ class Head(nn.Module):
             dim=1
         )
 
-        # NMS is performed outside DetectHead.
+        # 후처리 및 학습 코드로 반환
         return final_output, raw_outputs

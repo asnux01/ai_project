@@ -1,4 +1,7 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch
 import torch.nn as nn
 
@@ -6,7 +9,7 @@ from ..layer import Conv
 
 class SPPF(nn.Module):
     
-    # initialize
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -14,15 +17,15 @@ class SPPF(nn.Module):
         k=5
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(SPPF, self).__init__()
         
         # parameter
-        ch_i = in_channels          # in channels
-        ch_o = out_channels         # out channels
-        ch_h = out_channels // 2    # hidden channels
-        ch_c = ch_h * 4             # concated channels
-        mp_k = k                    # maxpool kernel size
+        ch_i = in_channels          # 입력 채널 수 
+        ch_o = out_channels         # 출력 채널 수
+        ch_h = out_channels // 2    # hidden 채널 수
+        ch_c = ch_h * 4             # concated 채널 수
+        mp_k = k                    # maxpool 커널 크기
         
         # Conv0
         self.conv0 = Conv(
@@ -40,8 +43,6 @@ class SPPF(nn.Module):
             padding=2
         )
         
-        # Concated channels
-        
         # Conv1
         self.conv1 = Conv(
             in_channels=ch_c,
@@ -51,7 +52,7 @@ class SPPF(nn.Module):
             padding=0
         )
         
-    # forward
+    # 포워드
     def forward(self, x):
         
         # Conv0
@@ -71,5 +72,5 @@ class SPPF(nn.Module):
         # Conv1
         x = self.conv1(x)
         
-        # return
+        # 반환
         return x

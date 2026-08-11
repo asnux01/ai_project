@@ -1,23 +1,26 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch
 import torch.nn as nn
 
 class DFL(nn.Module):
     
-        # initialize
+        # 초기화
         def __init__(
             self,
             reg_max
         ):
             
-            # nn.Module reset to use PyTorch
+            # PyTorch 사용을 위해 nn.Module 초기화
             super(DFL, self).__init__()
             
-            # parameter
+            # 포워드 접근 가능 파라미터
             self.reg_max = reg_max
             
             # Integral Conv
-            # Convert probability distribution into expected distance
+            # 확률 분포를 기대 거리(expected distance)로 변환
             self.conv = nn.Conv2d(
                 in_channels=reg_max,
                 out_channels=1,
@@ -40,20 +43,21 @@ class DFL(nn.Module):
                 1
             )
 
-            # Set fixed convolution weights
+            # Conv weight를 거리 구간 값으로 설정
             self.conv.weight.data.copy_(projection)
 
-            # DFL integral weights are not trainable
+            # Projection weight는 학습 대상이 아닌 고정 값
             self.conv.requires_grad_(False)
 
-        # forward
+        # 포워드
         def forward(self, x):
 
-            # input shape
+            # 입력 형태:
+            #
             # x: [batch_size, 4 * reg_max, num_anchors]
-            batch_size, channels, num_anchors = x.shape
+            batch_size, _, num_anchors = x.shape
             
-            # Separate four bounding-box directions
+            # 4 방향으로 logit 분리
             # [B, 4 * reg_max, A]
             #             ↓
             # [B, 4, reg_max, A]
@@ -64,26 +68,26 @@ class DFL(nn.Module):
                 num_anchors
             )
 
-            # Move distribution dimension to Conv2d channel dimension
+            # reg_max 차원을 Conv2d의 채널 차원으로 이동
             # [B, 4, reg_max, A]
             #             ↓
             # [B, reg_max, 4, A]
             x = x.transpose(1, 2)
 
-            # Convert logits into probability distributions
+            # 각 방향의 거리 logit을 확률 분포로 변환
             x = torch.softmax(
                 x,
                 dim=1
             )
 
-            # Calculate expected distances
+            # 각 방향의 거리 기댓값을 계산
             # 0*p0 + 1*p1 + ... + (reg_max-1)*p_last
             # [B, reg_max, 4, A]
             #             ↓
             # [B, 1, 4, A]
             x = self.conv(x)
 
-            # Remove unnecessary channel dimension
+            # 불필요한 단일 채널 차원을 제거
             # [B, 1, 4, A]
             #             ↓
             # [B, 4, A]
@@ -93,5 +97,5 @@ class DFL(nn.Module):
                 num_anchors
             )
 
-            # return
+            # 반환
             return x

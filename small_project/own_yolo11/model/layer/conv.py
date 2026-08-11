@@ -1,9 +1,12 @@
-# import library
+#----------------------------------------------
+# 라이브러리
+#----------------------------------------------
+
 import torch.nn as nn
 
 class Conv(nn.Module):
     
-    # initialize
+    # 초기화
     def __init__(
         self,
         in_channels,
@@ -15,7 +18,7 @@ class Conv(nn.Module):
         activation="silu"
     ):
         
-        # nn.Module reset to use PyTorch
+        # PyTorch 사용을 위해 nn.Module 초기화
         super(Conv, self).__init__()
         
         # parameter
@@ -48,7 +51,7 @@ class Conv(nn.Module):
         else:
             self.act = nn.Identity()
         
-    # forward
+    # 포워드
     def forward(self, x):
         
         # Conv
@@ -60,5 +63,5 @@ class Conv(nn.Module):
         # Activation
         x = self.act(x)
         
-        # return
+        # 반환
         return x
