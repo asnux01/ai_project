@@ -5,9 +5,7 @@ import torch
 
 # 클래스가 다른 bbox는 서로 억제하지 않는
 # batched NMS를 사용한다.
-from torchvision.ops import (
-    batched_nms,
-)
+from torchvision.ops import batched_nms
 
 
 def xywh_to_xyxy(

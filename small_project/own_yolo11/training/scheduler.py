@@ -25,7 +25,7 @@ def build_scheduler(
             ↓ Warmup
         기본 학습률
             ↓ Cosine decay
-        기본 학습률 × min_lr_ratio
+        기본 학습률 x min_lr_ratio
 
     Args:
         optimizer:

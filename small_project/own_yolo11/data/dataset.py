@@ -30,7 +30,7 @@ COCO2017_IMAGE_URLS = {
     "val2017": (
         "https://images.cocodataset.org/"
         "zips/val2017.zip"
-    ),
+    )
 }
 
 COCO2017_ANNOTATION_URL = (
@@ -58,7 +58,7 @@ LOGGER = logging.getLogger(
 def _log(
     level,
     message,
-    *args,
+    *args
 ):
     """
     logger가 준비된 경우에는
@@ -95,192 +95,52 @@ def _log(
 
 
 # --------------------------------------------------
-# COCO 저장소와 심볼릭 링크 준비
+# 기존 COCO 데이터셋 탐색
 # --------------------------------------------------
 
-def prepare_coco_dataset_link(
-    storage_dir,
-    link_dir,
+def _normalize_dataset_root(
+    dataset_root
 ):
-    """
-    실제 COCO 저장소와 프로젝트 내부의
-    심볼릭 링크를 준비한다.
+    """일반 디렉터리와 심볼릭 링크 경로를 보존해 절대 경로로 만든다."""
 
-    Args:
-        storage_dir:
-            COCO 파일이 실제로 저장될 물리 경로
-
-            이 프로젝트에서는:
-                /home/jblee/datasets/coco
-
-        link_dir:
-            프로젝트에서 Dataset 경로로 사용할
-            심볼릭 링크 경로
-
-            이 프로젝트에서는:
-                <project>/datasets/coco
-
-    Returns:
-        link_dir:
-            검사 또는 생성이 끝난 심볼릭 링크 경로
-    """
-
-    # 실제 저장 경로는 링크의 대상이므로
-    # 최종 절대 경로로 변환한다.
-    storage_dir = (
-        Path(storage_dir)
-        .expanduser()
-        .resolve(
-            strict=False
-        )
-    )
-
-    # 링크 경로에는 resolve()를 사용하지 않는다.
-    #
-    # 링크가 이미 존재하는 경우 resolve()를 사용하면
-    # 링크 자체가 아니라 링크 대상 경로가 반환되기 때문이다.
-    link_dir = (
-        Path(link_dir)
+    return (
+        Path(dataset_root)
         .expanduser()
         .absolute()
     )
 
-    # 실제 저장소와 링크 경로가 같으면
-    # 자기 자신을 가리키는 링크가 되므로 허용하지 않는다.
-    if link_dir == storage_dir:
-        raise ValueError(
-            "COCO 실제 저장 경로와 "
-            "심볼릭 링크 경로는 "
-            "서로 달라야 합니다."
-        )
 
-    # 실제 저장 경로에 일반 파일이 있다면
-    # COCO 데이터 디렉터리로 사용할 수 없다.
-    if (
-        storage_dir.exists()
-        and not storage_dir.is_dir()
-    ):
-        raise NotADirectoryError(
-            "COCO 실제 저장 경로가 "
-            "디렉터리가 아닙니다: "
-            f"{storage_dir}"
-        )
+def _coco2017_paths(
+    dataset_root
+):
+    """COCO 루트를 train/val 이미지 및 annotation 경로로 확장한다."""
 
-    # 실제 COCO 데이터가 저장될 디렉터리를 만든다.
-    storage_dir.mkdir(
-        parents=True,
-        exist_ok=True,
+    dataset_root = _normalize_dataset_root(
+        dataset_root
     )
 
-    # 프로젝트의 datasets 폴더가 없으면 생성한다.
-    link_dir.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    # --------------------------------------------------
-    # 기존 심볼릭 링크 확인
-    # --------------------------------------------------
-
-    # is_symlink()는 링크 대상이 사라진
-    # 깨진 링크에 대해서도 True를 반환한다.
-    if link_dir.is_symlink():
-
-        # 기존 링크가 실제로 가리키는 경로를 확인한다.
-        current_target = (
-            link_dir.resolve(
-                strict=False
-            )
-        )
-
-        # 다른 데이터셋 경로를 가리키는 링크는
-        # 사용자의 의도일 수 있으므로 자동으로 삭제하지 않는다.
-        if current_target != storage_dir:
-            raise RuntimeError(
-                "기존 COCO 심볼릭 링크가 "
-                "다른 경로를 가리키고 있습니다.\n"
-                f"현재 링크: "
-                f"{link_dir} -> {current_target}\n"
-                f"필요한 링크: "
-                f"{link_dir} -> {storage_dir}"
-            )
-
-        # 올바른 링크가 이미 있으면 그대로 사용한다.
-        _log(
-            "info",
-            "[COCO2017] 기존 심볼릭 링크 사용: "
-            "%s -> %s",
-            link_dir,
-            storage_dir,
-        )
-
-        return link_dir
-
-    # --------------------------------------------------
-    # 링크 위치의 일반 파일 또는 디렉터리 확인
-    # --------------------------------------------------
-
-    # 링크 위치에 일반 파일이 있으면
-    # 자동으로 삭제하지 않고 오류를 발생시킨다.
-    if (
-        link_dir.exists()
-        and not link_dir.is_dir()
-    ):
-        raise FileExistsError(
-            "COCO 심볼릭 링크 위치에 "
-            "일반 파일이 있습니다: "
-            f"{link_dir}"
-        )
-
-    # 이전 실행에서 빈 일반 디렉터리만 남은 경우에는
-    # 데이터 손실 없이 제거하고 링크로 교체할 수 있다.
-    if link_dir.is_dir():
-
-        # 내용이 있는 디렉터리는
-        # 사용자 데이터가 들어 있을 수 있으므로 삭제하지 않는다.
-        if any(
-            link_dir.iterdir()
-        ):
-            raise RuntimeError(
-                "COCO 링크 위치에 내용이 있는 "
-                "일반 디렉터리가 있습니다. "
-                "자동으로 삭제하지 않습니다: "
-                f"{link_dir}"
-            )
-
-        # 비어 있는 디렉터리만 제거한다.
-        link_dir.rmdir()
-
-    # --------------------------------------------------
-    # 심볼릭 링크 생성
-    # --------------------------------------------------
-
-    try:
-        # 프로젝트의 datasets/coco가
-        # 실제 저장소를 가리키게 한다.
-        link_dir.symlink_to(
-            storage_dir,
-            target_is_directory=True,
-        )
-
-    except OSError as error:
-        raise OSError(
-            "COCO 데이터용 심볼릭 링크를 "
-            "만들지 못했습니다. "
-            "링크 생성 권한과 경로를 확인하세요.\n"
-            f"생성할 링크: "
-            f"{link_dir} -> {storage_dir}"
-        ) from error
-
-    _log(
-        "info",
-        "[COCO2017] 심볼릭 링크 생성: "
-        "%s -> %s",
-        link_dir,
-        storage_dir,
-    )
-
-    return link_dir
+    return {
+        "train_images": (
+            dataset_root
+            / "images"
+            / "train2017"
+        ),
+        "val_images": (
+            dataset_root
+            / "images"
+            / "val2017"
+        ),
+        "train_annotation": (
+            dataset_root
+            / "annotations"
+            / "instances_train2017.json"
+        ),
+        "val_annotation": (
+            dataset_root
+            / "annotations"
+            / "instances_val2017.json"
+        ),
+    }
 
 
 # --------------------------------------------------
@@ -288,17 +148,17 @@ def prepare_coco_dataset_link(
 # --------------------------------------------------
 
 def _is_ssl_certificate_error(
-    error,
+    error
 ):
     """
     중첩된 urllib 예외에서
     SSL 인증서 검증 오류를 찾는다.
     """
 
-    # 현재 검사 중인 예외
+    # 현재 검사 중인 오류
     current_error = error
 
-    # 같은 예외를 반복해서 확인하는
+    # 같은 오류를 반복해서 확인하는
     # 순환 구조를 방지하기 위한 집합
     checked_error_ids = set()
 
@@ -308,7 +168,7 @@ def _is_ssl_certificate_error(
             current_error
         )
 
-        # 이미 검사한 예외를 다시 만났으면
+        # 이미 검사한 오류를 다시 만났으면
         # 순환 구조이므로 반복을 중단한다.
         if (
             current_error_id
@@ -352,7 +212,7 @@ def _is_ssl_certificate_error(
 def _open_download_response(
     request,
     timeout,
-    allow_insecure_ssl_fallback,
+    allow_insecure_ssl_fallback
 ):
     """
     정상적인 SSL 검증을 먼저 사용한다.
@@ -442,7 +302,7 @@ def _download_file(
     url,
     destination,
     chunk_size=1024 * 1024,
-    allow_insecure_ssl_fallback=False,
+    allow_insecure_ssl_fallback=False
 ):
     """
     파일을 임시 경로에 다운로드한 뒤
@@ -616,7 +476,7 @@ def _download_file(
 # --------------------------------------------------
 
 def _has_coco_images(
-    image_dir,
+    image_dir
 ):
     """폴더 안에 COCO JPG 이미지가 한 장 이상 있는지 확인한다."""
 
@@ -661,7 +521,7 @@ def _has_coco_annotation(
 
 def _extract_zip(
     archive_path,
-    destination,
+    destination
 ):
     """
     ZIP 내부의 모든 경로를 검사한 뒤
@@ -737,7 +597,7 @@ def _extract_zip(
 
 def _infer_coco_split(
     image_dir,
-    annotation_file,
+    annotation_file
 ):
     """
     입력 경로에서 train2017 또는
@@ -1122,6 +982,294 @@ def ensure_coco2017_available(
 
 
 # --------------------------------------------------
+# 기존 데이터셋 선택 또는 공식 데이터셋 다운로드
+# --------------------------------------------------
+
+def is_complete_coco2017_dataset(
+    dataset_root,
+):
+    """학습과 검증에 필요한 COCO2017 파일이 모두 있는지 확인한다."""
+
+    dataset_root = _normalize_dataset_root(
+        dataset_root
+    )
+
+    # Path의 파일 검사는 정상 심볼릭 링크의 대상을 자동으로 따라간다.
+    # 따라서 일반 디렉터리와 기존 심볼릭 링크를 같은 방식으로 검사한다.
+    if not dataset_root.is_dir():
+        return False
+
+    paths = _coco2017_paths(
+        dataset_root
+    )
+
+    return all(
+        (
+            _has_coco_images(
+                paths["train_images"]
+            ),
+            _has_coco_images(
+                paths["val_images"]
+            ),
+            _has_coco_annotation(
+                paths["train_annotation"]
+            ),
+            _has_coco_annotation(
+                paths["val_annotation"]
+            ),
+        )
+    )
+
+
+def find_coco2017_dataset(
+    candidate_dirs,
+):
+    """후보 경로 중 처음 발견한 완전한 COCO2017 데이터셋을 반환한다."""
+
+    if not isinstance(
+        candidate_dirs,
+        (tuple, list),
+    ):
+        raise TypeError(
+            "candidate_dirs는 경로의 "
+            "tuple 또는 list여야 합니다."
+        )
+
+    if not candidate_dirs:
+        raise ValueError(
+            "candidate_dirs에는 경로가 "
+            "하나 이상 필요합니다."
+        )
+
+    checked_paths = set()
+
+    for candidate_dir in candidate_dirs:
+        candidate_dir = _normalize_dataset_root(
+            candidate_dir
+        )
+
+        # 같은 경로가 중복 설정된 경우에는 한 번만 검사한다.
+        candidate_key = str(
+            candidate_dir
+        )
+
+        if candidate_key in checked_paths:
+            continue
+
+        checked_paths.add(
+            candidate_key
+        )
+
+        # 링크 대상이 사라진 깨진 심볼릭 링크는 사용할 수 없다.
+        if (
+            candidate_dir.is_symlink()
+            and not candidate_dir.exists()
+        ):
+            _log(
+                "warning",
+                "[COCO2017] 깨진 심볼릭 링크를 건너뜁니다: %s",
+                candidate_dir,
+            )
+
+            continue
+
+        if is_complete_coco2017_dataset(
+            candidate_dir
+        ):
+            if candidate_dir.is_symlink():
+                _log(
+                    "info",
+                    "[COCO2017] 기존 심볼릭 링크의 "
+                    "데이터셋 사용: %s -> %s",
+                    candidate_dir,
+                    candidate_dir.resolve(),
+                )
+
+            else:
+                _log(
+                    "info",
+                    "[COCO2017] 기존 데이터셋 사용: %s",
+                    candidate_dir,
+                )
+
+            return candidate_dir
+
+        if candidate_dir.exists():
+            _log(
+                "warning",
+                "[COCO2017] 경로는 존재하지만 필요한 파일이 "
+                "모두 없어 건너뜁니다: %s",
+                candidate_dir,
+            )
+
+        else:
+            _log(
+                "info",
+                "[COCO2017] 후보 경로에 데이터셋이 없습니다: %s",
+                candidate_dir,
+            )
+
+    return None
+
+
+def prepare_coco2017_dataset(
+    candidate_dirs,
+    download_dir,
+    auto_download=True,
+    allow_insecure_ssl_fallback=False,
+):
+    """기존 COCO2017을 선택하고, 없을 때만 공식 서버에서 다운로드한다.
+
+    이 함수는 심볼릭 링크를 새로 만들거나 기존 링크를 변경하지 않는다.
+    후보 경로에 이미 존재하는 정상 심볼릭 링크는 일반 디렉터리처럼
+    검사하며, 완전한 COCO2017 데이터가 있으면 그 경로를 그대로 반환한다.
+    """
+
+    if not isinstance(
+        auto_download,
+        bool,
+    ):
+        raise TypeError(
+            "auto_download는 bool이어야 합니다."
+        )
+
+    if not isinstance(
+        allow_insecure_ssl_fallback,
+        bool,
+    ):
+        raise TypeError(
+            "allow_insecure_ssl_fallback은 "
+            "bool이어야 합니다."
+        )
+
+    if not isinstance(
+        candidate_dirs,
+        (tuple, list),
+    ):
+        raise TypeError(
+            "candidate_dirs는 경로의 "
+            "tuple 또는 list여야 합니다."
+        )
+
+    if not candidate_dirs:
+        raise ValueError(
+            "candidate_dirs에는 경로가 "
+            "하나 이상 필요합니다."
+        )
+
+    download_dir = _normalize_dataset_root(
+        download_dir
+    )
+
+    # 다운로드 경로도 기존 데이터 후보에 포함한다.
+    # 사용자가 후보 목록에서 빠뜨려도 중복 다운로드하지 않기 위함이다.
+    search_dirs = list(
+        candidate_dirs
+    )
+
+    if download_dir not in search_dirs:
+        search_dirs.append(
+            download_dir
+        )
+
+    existing_dataset = find_coco2017_dataset(
+        search_dirs
+    )
+
+    if existing_dataset is not None:
+        return existing_dataset
+
+    if not auto_download:
+        checked = "\n".join(
+            f"- {_normalize_dataset_root(path)}"
+            for path in search_dirs
+        )
+
+        raise FileNotFoundError(
+            "사용 가능한 COCO2017 데이터셋을 "
+            "찾지 못했습니다.\n"
+            f"검사한 경로:\n{checked}"
+        )
+
+    # 어느 후보에도 완전한 데이터셋이 없을 때만
+    # 지정된 다운로드 경로를 준비한다.
+    # 이 경로 자체가 정상 심볼릭 링크라면 링크 대상을 그대로 사용한다.
+    if (
+        download_dir.exists()
+        and not download_dir.is_dir()
+    ):
+        raise NotADirectoryError(
+            "COCO 다운로드 경로가 "
+            "디렉터리가 아닙니다: "
+            f"{download_dir}"
+        )
+
+    if (
+        download_dir.is_symlink()
+        and not download_dir.exists()
+    ):
+        raise FileNotFoundError(
+            "COCO 다운로드 경로가 깨진 "
+            "심볼릭 링크입니다: "
+            f"{download_dir}"
+        )
+
+    download_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    paths = _coco2017_paths(
+        download_dir
+    )
+
+    _log(
+        "info",
+        "[COCO2017] 기존 데이터셋이 없어 "
+        "공식 서버에서 다운로드합니다: %s",
+        download_dir,
+    )
+
+    # ensure 함수는 이미 있는 항목은 유지하고 누락된 항목만 받는다.
+    ensure_coco2017_available(
+        image_dir=paths["train_images"],
+        annotation_file=(
+            paths["train_annotation"]
+        ),
+        allow_insecure_ssl_fallback=(
+            allow_insecure_ssl_fallback
+        ),
+    )
+
+    ensure_coco2017_available(
+        image_dir=paths["val_images"],
+        annotation_file=(
+            paths["val_annotation"]
+        ),
+        allow_insecure_ssl_fallback=(
+            allow_insecure_ssl_fallback
+        ),
+    )
+
+    if not is_complete_coco2017_dataset(
+        download_dir
+    ):
+        raise RuntimeError(
+            "다운로드 후에도 COCO2017 데이터셋이 "
+            "완전하지 않습니다: "
+            f"{download_dir}"
+        )
+
+    _log(
+        "info",
+        "[COCO2017] 다운로드한 데이터셋 사용: %s",
+        download_dir,
+    )
+
+    return download_dir
+
+
+# --------------------------------------------------
 # COCO2017 Dataset
 # --------------------------------------------------
 
@@ -1336,7 +1484,7 @@ class Coco2017Dataset(
 
     def __getitem__(
         self,
-        index,
+        index
     ):
         """index번째 이미지와 객체 탐지 정답을 반환한다."""
 
@@ -1587,7 +1735,7 @@ class Coco2017Dataset(
 # --------------------------------------------------
 
 def detection_collate_fn(
-    batch,
+    batch
 ):
     """
     이미지는 하나의 Tensor로 쌓고

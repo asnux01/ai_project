@@ -311,7 +311,7 @@ def load_checkpoint(
     scheduler=None,
     scaler=None,
     ema=None,
-    map_location="cpu",
+    map_location="cpu"
 ):
     """
     checkpoint에서 모델과

@@ -106,55 +106,101 @@ def validate_epoch(
             # Forward 및 Loss 계산
             # --------------------------------------------------
 
-            # 검증 forward에도 CUDA AMP를 사용할 수 있다.
+            # 검증 모델 forward에만 AMP를 적용한다.
             with torch.autocast(
                 device_type=device.type,
                 dtype=torch.float16,
                 enabled=amp_enabled,
             ):
-                # eval mode의 YOLO11 Head는
-                # 다음 tuple을 반환한다.
-                #
-                # (
-                #     decoded_output,
-                #     raw_output,
-                # )
                 model_output = model(
                     images
                 )
 
-                # 잘못된 출력 형식을
-                # Loss에 전달하기 전에 확인한다.
-                if (
-                    not isinstance(
-                        model_output,
-                        tuple,
-                    )
-                    or len(
-                        model_output
-                    )
-                    != 2
-                ):
-                    raise TypeError(
-                        "eval mode의 모델 출력은 "
-                        "(decoded_output, raw_output)"
-                        "이어야 합니다."
-                    )
+            # eval mode의 모델 출력 형식을 검사한다.
+            if (
+                not isinstance(
+                    model_output,
+                    tuple,
+                )
+                or len(model_output) != 2
+            ):
+                raise TypeError(
+                    "eval mode의 모델 출력은 "
+                    "(decoded_output, raw_output)"
+                    "이어야 합니다."
+                )
 
-                # decoded_output:
-                #     bbox와 class 확률이 decode된 결과
-                #
-                # predictions:
-                #     Loss 계산에 필요한 raw output
-                (
-                    decoded_output,
-                    predictions,
-                ) = model_output
+            (
+                decoded_output,
+                predictions,
+            ) = model_output
 
-                # validation loss 계산
+            if not isinstance(
+                predictions,
+                dict,
+            ):
+                raise TypeError(
+                    "validation raw output은 "
+                    "dict여야 합니다."
+                )
+
+            required_prediction_keys = {
+                "box_logits",
+                "class_logits",
+                "features",
+            }
+
+            missing_prediction_keys = (
+                required_prediction_keys
+                - predictions.keys()
+            )
+
+            if missing_prediction_keys:
+                raise KeyError(
+                    "validation 모델 출력에 필요한 "
+                    "값이 없습니다: "
+                    f"{sorted(missing_prediction_keys)}"
+                )
+
+            # mAP 및 NMS 계산에 사용할 출력은
+            # float32로 변환한다.
+            decoded_output = (
+                decoded_output.float()
+            )
+
+            # Validation loss 입력도 FP32로 변환한다.
+            loss_predictions = dict(
+                predictions
+            )
+
+            loss_predictions[
+                "box_logits"
+            ] = predictions[
+                "box_logits"
+            ].float()
+
+            loss_predictions[
+                "class_logits"
+            ] = predictions[
+                "class_logits"
+            ].float()
+
+            loss_predictions[
+                "features"
+            ] = [
+                feature.float()
+                for feature
+                in predictions["features"]
+            ]
+
+            # Validation loss는 AMP를 끄고 계산한다.
+            with torch.autocast(
+                device_type=device.type,
+                enabled=False,
+            ):
                 total_loss, loss_items = (
                     criterion(
-                        predictions,
+                        loss_predictions,
                         targets,
                     )
                 )

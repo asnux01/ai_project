@@ -11,14 +11,14 @@ from torch.utils.data import DataLoader
 # 프로젝트 전체 학습 설정
 from config import get_config
 
-# COCO Dataset, 심볼릭 링크,
+# COCO Dataset 탐색·다운로드,
 # collate 및 이미지·bbox 변환
 from data import (
     Coco2017Dataset,
     build_train_transform,
     build_val_transform,
     detection_collate_fn,
-    prepare_coco_dataset_link,
+    prepare_coco2017_dataset,
 )
 
 # 기존 YOLO11 Detection Loss
@@ -422,31 +422,54 @@ def main():
         )
 
         # --------------------------------------------------
-        # 3. COCO 저장소와 심볼릭 링크 준비
+        # 3. 기존 COCO 데이터셋 선택 또는 다운로드
         # --------------------------------------------------
 
-        # 실제 데이터 저장 위치:
-        # /home/jblee/datasets/coco
-        #
-        # 프로젝트에서 접근할 위치:
-        # <project>/datasets/coco
-        prepare_coco_dataset_link(
-            storage_dir=(
-                config.dataset_storage_dir
+        # 후보 경로에 완전한 COCO2017이 있으면 그대로 사용한다.
+        # 후보가 심볼릭 링크여도 링크를 새로 만들지 않고 그대로 따른다.
+        # 어느 후보에도 데이터가 없을 때만 download_dir에 다운로드한다.
+        dataset_root = prepare_coco2017_dataset(
+            candidate_dirs=(
+                config.dataset_candidate_dirs
             ),
-            link_dir=(
-                config.dataset_link_dir
+            download_dir=(
+                config.dataset_download_dir
+            ),
+            auto_download=(
+                config.auto_download
+            ),
+            allow_insecure_ssl_fallback=(
+                config.allow_insecure_ssl_fallback
             ),
         )
 
         logger.info(
-            "COCO 실제 저장소: %s",
-            config.dataset_storage_dir,
+            "이번 학습에서 사용할 COCO 경로: %s",
+            dataset_root,
         )
 
-        logger.info(
-            "COCO 프로젝트 링크: %s",
-            config.dataset_link_dir,
+        train_image_dir = (
+            dataset_root
+            / "images"
+            / "train2017"
+        )
+
+        val_image_dir = (
+            dataset_root
+            / "images"
+            / "val2017"
+        )
+
+        train_annotation_file = (
+            dataset_root
+            / "annotations"
+            / "instances_train2017.json"
+        )
+
+        val_annotation_file = (
+            dataset_root
+            / "annotations"
+            / "instances_val2017.json"
         )
 
         # --------------------------------------------------
@@ -476,22 +499,19 @@ def main():
         # 5. COCO Dataset 생성
         # --------------------------------------------------
 
-        # 데이터가 없다면
-        # /home/jblee/datasets/coco 아래에 다운로드한다.
+        # 위에서 데이터 준비를 끝냈으므로 Dataset은 선택된 경로만 읽는다.
         train_dataset = (
             Coco2017Dataset(
                 image_dir=(
-                    config.train_image_dir
+                    train_image_dir
                 ),
                 annotation_file=(
-                    config.train_annotation_file
+                    train_annotation_file
                 ),
                 image_size=(
                     config.image_size
                 ),
-                auto_download=(
-                    config.auto_download
-                ),
+                auto_download=False,
                 allow_insecure_ssl_fallback=(
                     config
                     .allow_insecure_ssl_fallback
@@ -502,24 +522,19 @@ def main():
             )
         )
 
-        # Validation Dataset을 생성한다.
-        #
-        # train Dataset 생성 과정에서 annotation이 다운로드됐다면
-        # 기존 annotation을 재사용하고 val 이미지만 확인한다.
+        # 같은 dataset_root를 사용하는 Validation Dataset을 생성한다.
         val_dataset = (
             Coco2017Dataset(
                 image_dir=(
-                    config.val_image_dir
+                    val_image_dir
                 ),
                 annotation_file=(
-                    config.val_annotation_file
+                    val_annotation_file
                 ),
                 image_size=(
                     config.image_size
                 ),
-                auto_download=(
-                    config.auto_download
-                ),
+                auto_download=False,
                 allow_insecure_ssl_fallback=(
                     config
                     .allow_insecure_ssl_fallback

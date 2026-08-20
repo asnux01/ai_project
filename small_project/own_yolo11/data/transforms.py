@@ -1,22 +1,9 @@
 """객체 탐지 이미지와 bounding box를 함께 변환한다."""
-
-# 변환 확률 생성, bbox 계산,
-# 이미지 Tensor 변환에 사용한다.
+# 라이브러리
 import torch
-
-# ColorJitter는 밝기, 대비, 채도, 색조를
-# 무작위로 바꾼다.
 from torchvision.transforms import ColorJitter
-
-# functional API를 사용해
-# 이미지와 bbox 변환 순서를 직접 제어한다.
 from torchvision.transforms import functional as F
-
-# 이미지 resize에 사용할
-# 보간 방법을 명시한다.
-from torchvision.transforms.functional import (
-    InterpolationMode,
-)
+from torchvision.transforms.functional import InterpolationMode
 
 
 class DetectionTransform:
@@ -67,10 +54,7 @@ class DetectionTransform:
         # 양의 정수여야 한다.
         if (
             isinstance(image_size, bool)
-            or not isinstance(
-                image_size,
-                int,
-            )
+            or not isinstance(image_size, int)
         ):
             raise TypeError(
                 "image_size는 정수여야 합니다."
@@ -83,30 +67,19 @@ class DetectionTransform:
 
         # training=False인 검증 데이터에는
         # 무작위 증강을 적용하지 않는다.
-        if not isinstance(
-            training,
-            bool,
-        ):
+        if not isinstance(training, bool):
             raise TypeError(
                 "training은 bool이어야 합니다."
             )
 
-        if not (
-            0.0
-            <= horizontal_flip_probability
-            <= 1.0
-        ):
+        if not (0.0 <= horizontal_flip_probability <= 1.0):
             raise ValueError(
                 "horizontal_flip_probability는 "
                 "0과 1 사이여야 합니다."
             )
 
         # RGB 픽셀값은 0~255 범위여야 한다.
-        if not (
-            0
-            <= fill_value
-            <= 255
-        ):
+        if not (0 <= fill_value <= 255):
             raise ValueError(
                 "fill_value는 0과 255 사이여야 합니다."
             )
@@ -142,7 +115,7 @@ class DetectionTransform:
                 brightness,
                 contrast,
                 saturation,
-                abs(hue),
+                abs(hue)
             )
         )
 
@@ -177,15 +150,8 @@ class DetectionTransform:
             #
             # new_x1 = image_width - old_x2
             # new_x2 = image_width - old_x1
-            boxes[:, 0] = (
-                float(image_width)
-                - old_x2
-            )
-
-            boxes[:, 2] = (
-                float(image_width)
-                - old_x1
-            )
+            boxes[:, 0] = float(image_width) - old_x2
+            boxes[:, 2] = float(image_width) - old_x1
 
         # 반전된 이미지와 bbox를 함께 반환한다.
         return image, boxes
@@ -205,102 +171,54 @@ class DetectionTransform:
         # 가로와 세로 중 더 많이 축소해야 하는 비율을 선택하면
         # 원본 비율을 유지한 채 전체 이미지가 입력 영역에 들어간다.
         scale = min(
-            (
-                self.image_size
-                / float(original_width)
-            ),
-            (
-                self.image_size
-                / float(original_height)
-            ),
+            self.image_size / float(original_width),
+            self.image_size / float(original_height)
         )
 
         # 반올림 결과가 0이 되지 않도록
         # 최소 크기를 1로 제한한다.
         resized_width = max(
-            1,
-            int(
-                round(
-                    original_width
-                    * scale
-                )
-            ),
+            1, 
+            int(round(original_width * scale))
         )
 
         resized_height = max(
             1,
-            int(
-                round(
-                    original_height
-                    * scale
-                )
-            ),
+            int(round(original_height * scale))
         )
 
         # 계산한 비율로 이미지를 resize한다.
         image = F.resize(
             image,
-            [
-                resized_height,
-                resized_width,
-            ],
-            interpolation=(
-                InterpolationMode.BILINEAR
-            ),
-            antialias=True,
+            [resized_height, resized_width],
+            interpolation=InterpolationMode.BILINEAR,
+            antialias=True
         )
 
         # resize 이후 입력 크기까지 남아 있는
         # 전체 padding 크기를 계산한다.
-        horizontal_padding = (
-            self.image_size
-            - resized_width
-        )
-
-        vertical_padding = (
-            self.image_size
-            - resized_height
-        )
+        horizontal_padding = self.image_size - resized_width
+        vertical_padding = self.image_size - resized_height
 
         # padding을 양쪽에 최대한 균등하게 나눈다.
         #
         # 전체 padding이 홀수이면
         # 오른쪽 또는 아래쪽에 한 픽셀 더 들어간다.
-        left = (
-            horizontal_padding
-            // 2
-        )
-
-        right = (
-            horizontal_padding
-            - left
-        )
-
-        top = (
-            vertical_padding
-            // 2
-        )
-
-        bottom = (
-            vertical_padding
-            - top
-        )
+        left = horizontal_padding // 2
+        right = horizontal_padding - left
+        top = vertical_padding // 2
+        bottom = vertical_padding - top
 
         # YOLO 계열에서 일반적으로 사용하는
         # 회색 픽셀값 114로 빈 영역을 채운다.
         image = F.pad(
             image,
-            [
-                left,
-                top,
-                right,
-                bottom,
-            ],
+            [left, top, right, bottom],
             fill=(
                 self.fill_value,
                 self.fill_value,
-                self.fill_value,
-            ),
+                self.fill_value
+            )
         )
 
         # 이미지에 객체가 있을 때 bbox에도
@@ -309,51 +227,29 @@ class DetectionTransform:
 
             # x1과 x2에 resize 비율 및
             # 왼쪽 padding을 적용한다.
-            boxes[:, [0, 2]] = (
-                boxes[:, [0, 2]]
-                * scale
-                + left
-            )
+            boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale + left
 
             # y1과 y2에 resize 비율 및
             # 위쪽 padding을 적용한다.
-            boxes[:, [1, 3]] = (
-                boxes[:, [1, 3]]
-                * scale
-                + top
-            )
+            boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale + top
 
             # 계산 오차로 bbox가 모델 입력 범위를
             # 벗어나지 않도록 좌표를 제한한다.
             boxes[:, [0, 2]].clamp_(
                 min=0.0,
-                max=float(
-                    self.image_size
-                ),
+                max=float(self.image_size)
             )
 
             boxes[:, [1, 3]].clamp_(
                 min=0.0,
-                max=float(
-                    self.image_size
-                ),
+                max=float(self.image_size)
             )
 
         # 나중에 시각화나 원본 좌표 복원에 사용할 수 있도록
         # 네 방향 padding 값을 저장한다.
-        padding = (
-            left,
-            top,
-            right,
-            bottom,
-        )
+        padding = (left, top, right, bottom)
 
-        return (
-            image,
-            boxes,
-            scale,
-            padding,
-        )
+        return (image, boxes, scale, padding)
 
     def __call__(
         self,
@@ -363,10 +259,7 @@ class DetectionTransform:
         """PIL 이미지와 target을 함께 변환한다."""
 
         # target은 boxes, labels 등을 담는 딕셔너리여야 한다.
-        if not isinstance(
-            target,
-            dict,
-        ):
+        if not isinstance(target, dict):
             raise TypeError(
                 "target은 dict여야 합니다."
             )
@@ -382,10 +275,7 @@ class DetectionTransform:
 
         # PIL image.size의 순서는
         # Tensor shape과 달리 (width, height)다.
-        (
-            original_width,
-            original_height,
-        ) = image.size
+        (original_width, original_height) = image.size
 
         if (
             original_width <= 0
@@ -398,27 +288,13 @@ class DetectionTransform:
 
         # 원본 target을 직접 변경하지 않도록
         # 새로운 딕셔너리를 만든다.
-        transformed_target = dict(
-            target
-        )
+        transformed_target = dict(target)
 
         # bbox 계산은 float32로 수행한다.
-        boxes = (
-            target["boxes"]
-            .clone()
-            .to(
-                dtype=torch.float32
-            )
-        )
+        boxes = target["boxes"].clone().to(dtype=torch.float32)
 
         # 클래스 번호는 정수형으로 유지한다.
-        labels = (
-            target["labels"]
-            .clone()
-            .to(
-                dtype=torch.int64
-            )
-        )
+        labels = target["labels"].clone().to(dtype=torch.int64)
 
         # xyxy bbox는 객체마다 좌표 4개가 필요하다.
         if (
@@ -441,13 +317,8 @@ class DetectionTransform:
             )
 
         # 색상 증강은 학습 데이터에만 적용한다.
-        if (
-            self.training
-            and self.use_color_jitter
-        ):
-            image = self.color_jitter(
-                image
-            )
+        if (self.training and self.use_color_jitter):
+            image = self.color_jitter(image)
 
         # target metadata에 실제 반전 여부를
         # 기록하기 위한 초기값이다.
@@ -478,7 +349,7 @@ class DetectionTransform:
             image,
             boxes,
             scale,
-            padding,
+            padding
         ) = self._letterbox(
             image=image,
             boxes=boxes,
@@ -495,23 +366,12 @@ class DetectionTransform:
         if boxes.numel() > 0:
 
             valid_mask = (
-                (
-                    boxes[:, 2]
-                    > boxes[:, 0]
-                )
-                & (
-                    boxes[:, 3]
-                    > boxes[:, 1]
-                )
+                (boxes[:, 2] > boxes[:, 0])
+                & 
+                (boxes[:, 3] > boxes[:, 1])
             )
-
-            boxes = boxes[
-                valid_mask
-            ]
-
-            labels = labels[
-                valid_mask
-            ]
+            boxes = boxes[valid_mask]
+            labels = labels[valid_mask]
 
         # PIL 이미지를 다음 형식으로 변환한다.
         #
@@ -523,13 +383,8 @@ class DetectionTransform:
         #
         # 값 범위:
         # 0~1
-        image = (
-            F.pil_to_tensor(image)
-            .to(
-                dtype=torch.float32
-            )
-            / 255.0
-        )
+        image = F.pil_to_tensor(image).to(dtype=torch.float32) / 255.0
+        
 
         # DataLoader에서 이미지를 쌓기 전에
         # 예상한 크기로 변환됐는지 확인한다.
@@ -545,70 +400,42 @@ class DetectionTransform:
             )
 
         # 변환이 완료된 bbox와 label을 target에 저장한다.
-        transformed_target[
-            "boxes"
-        ] = boxes
+        transformed_target["boxes"] = boxes
 
-        transformed_target[
-            "labels"
-        ] = labels
+        transformed_target["labels"] = labels
 
         # 검증 및 시각화에서 좌표 변환을 확인할 수 있도록
         # 원본 이미지 크기를 [height, width] 순서로 저장한다.
-        transformed_target[
-            "original_size"
-        ] = torch.tensor(
-            [
-                original_height,
-                original_width,
-            ],
-            dtype=torch.int64,
+        transformed_target["original_size"] = torch.tensor(
+            [original_height, original_width], dtype=torch.int64
         )
 
         # 모델에 들어가는 최종 입력 크기를 저장한다.
-        transformed_target[
-            "input_size"
-        ] = torch.tensor(
-            [
-                self.image_size,
-                self.image_size,
-            ],
-            dtype=torch.int64,
+        transformed_target["input_size"] = torch.tensor(
+            [self.image_size, self.image_size], dtype=torch.int64
         )
 
         # Letterbox resize에 사용한 비율을 저장한다.
-        transformed_target[
-            "scale"
-        ] = torch.tensor(
-            scale,
-            dtype=torch.float32,
+        transformed_target["scale"] = torch.tensor(
+            scale, dtype=torch.float32
         )
 
         # padding 순서는
         # [left, top, right, bottom]이다.
-        transformed_target[
-            "padding"
-        ] = torch.tensor(
-            padding,
-            dtype=torch.int64,
+        transformed_target["padding"] = torch.tensor(
+            padding, dtype=torch.int64
         )
 
         # 학습 증강에서 좌우 반전됐는지 저장한다.
-        transformed_target[
-            "was_flipped"
-        ] = torch.tensor(
-            was_flipped,
-            dtype=torch.bool,
+        transformed_target["was_flipped"] = torch.tensor(
+            was_flipped, dtype=torch.bool
         )
 
-        return (
-            image,
-            transformed_target,
-        )
+        return (image, transformed_target)
 
 
 def build_train_transform(
-    config,
+    config
 ):
     """
     학습 데이터용 Letterbox와
@@ -616,25 +443,13 @@ def build_train_transform(
     """
 
     return DetectionTransform(
-        image_size=(
-            config.image_size
-        ),
+        image_size=config.image_size,
         training=True,
-        horizontal_flip_probability=(
-            config.horizontal_flip_probability
-        ),
-        brightness=(
-            config.brightness
-        ),
-        contrast=(
-            config.contrast
-        ),
-        saturation=(
-            config.saturation
-        ),
-        hue=(
-            config.hue
-        ),
+        horizontal_flip_probability=config.horizontal_flip_probability,
+        brightness=config.brightness,
+        contrast=config.contrast,
+        saturation=config.saturation,
+        hue=config.hue
     )
 
 
@@ -647,8 +462,6 @@ def build_val_transform(
     """
 
     return DetectionTransform(
-        image_size=(
-            config.image_size
-        ),
-        training=False,
+        image_size=config.image_size,
+        training=False
     )

@@ -49,17 +49,28 @@ class TrainConfig:
         default_factory=lambda: Path(__file__).resolve().parent
     )
 
-    # COCO 데이터가 실제로 저장되는 서버의 물리 경로다.
-    dataset_storage_dir: Path = Path(
-        "/home/jblee/datasets/coco"
+    # 기존 COCO 데이터가 발견되지 않았을 때
+    # 새 데이터셋을 다운로드할 기본 경로다.
+    dataset_download_dir: Path = Path(
+        "/home/jblee/dataset/coco"
     )
 
-    # 프로젝트 내부에서 접근할 심볼릭 링크 경로다.
-    # None이면 <project_root>/datasets/coco를 자동으로 사용한다.
-    dataset_link_dir: Path | None = None
+    # 기존 COCO 데이터셋을 찾을 후보 경로다.
+    #
+    # None이면 다음 경로를 순서대로 검사한다.
+    #
+    # 1. <project_root>/dataset/coco
+    # 2. dataset_download_dir
+    #
+    # 후보 경로가 일반 디렉터리이든 심볼릭 링크이든
+    # 완전한 COCO2017 구조가 있으면 그대로 사용한다.
+    # 이 코드는 심볼릭 링크를 새로 만들지 않는다.
+    dataset_candidate_dirs: tuple[Path, ...] | None =(
+        Path("/home/jblee/dataset/coco"),
+    )
 
     # 데이터가 없을 때 COCO2017을 자동으로 다운로드한다.
-    auto_download: bool = True
+    auto_download: bool = False
 
     # 인증서 hostname 오류가 발생한 경우에만 COCO 공식 호스트에 한해
     # 인증서 검증 없이 다시 시도한다.
@@ -106,7 +117,7 @@ class TrainConfig:
     # --------------------------------------------------
 
     # CUDA에서 float16 자동 혼합 정밀도를 사용한다.
-    use_amp: bool = True
+    use_amp: bool = False
 
     # 학습 모델의 이동평균 가중치를 별도로 관리한다.
     use_ema: bool = True
@@ -119,7 +130,7 @@ class TrainConfig:
 
     # mAP는 후처리와 추가 연산이 필요하므로 기본값은 끈다.
     # 기본 학습이 정상 동작한 다음 True로 변경한다.
-    calculate_map: bool = False
+    calculate_map: bool = True
     confidence_threshold: float = 0.001
     nms_iou_threshold: float = 0.7
     max_detections: int = 300
@@ -173,28 +184,45 @@ class TrainConfig:
             self.project_root
         ).expanduser().resolve()
 
-        # 실제 COCO 파일이 저장되는 경로는 심볼릭 링크의 대상이므로
-        # 최종 물리 경로까지 해석해도 문제가 없다.
-        self.dataset_storage_dir = Path(
-            self.dataset_storage_dir
-        ).expanduser().resolve()
+        # 다운로드 경로가 이미 심볼릭 링크인 경우에도
+        # 사용자가 지정한 경로 자체를 유지하도록 resolve()하지 않는다.
+        self.dataset_download_dir = Path(
+            self.dataset_download_dir
+        ).expanduser().absolute()
 
-        # 링크 경로를 입력하지 않으면 프로젝트 아래의
-        # datasets/coco를 고정된 링크 위치로 사용한다.
-        if self.dataset_link_dir is None:
-            self.dataset_link_dir = (
+        # 후보 경로를 따로 지정하지 않으면 프로젝트 내부 경로와
+        # 기본 다운로드 경로를 순서대로 검사한다.
+        if self.dataset_candidate_dirs is None:
+            self.dataset_candidate_dirs = (
                 self.project_root
-                / "datasets"
-                / "coco"
+                / "dataset"
+                / "coco",
+                self.dataset_download_dir,
             )
 
         else:
-            # 심볼릭 링크 경로에는 resolve()를 사용하지 않는다.
-            # 이미 링크가 존재하면 resolve()가 링크 자체가 아니라
-            # /home/jblee/datasets/coco를 반환할 수 있기 때문이다.
-            self.dataset_link_dir = Path(
-                self.dataset_link_dir
-            ).expanduser().absolute()
+            if not isinstance(
+                self.dataset_candidate_dirs,
+                (tuple, list),
+            ):
+                raise TypeError(
+                    "dataset_candidate_dirs는 "
+                    "경로의 tuple 또는 list여야 합니다."
+                )
+
+            self.dataset_candidate_dirs = tuple(
+                Path(candidate_dir)
+                .expanduser()
+                .absolute() 
+                for candidate_dir
+                in self.dataset_candidate_dirs
+            )
+
+        if not self.dataset_candidate_dirs:
+            raise ValueError(
+                "dataset_candidate_dirs에는 "
+                "경로가 하나 이상 필요합니다."
+            )
 
         # 별도 경로를 지정하지 않으면 프로젝트 아래에
         # checkpoint와 log 디렉터리를 만든다.
@@ -430,46 +458,6 @@ class TrainConfig:
             raise ValueError(
                 "max_detections는 1 이상이어야 합니다."
             )
-
-    @property
-    def train_image_dir(self):
-        """심볼릭 링크 기준의 COCO train 이미지 경로를 반환한다."""
-
-        return (
-            self.dataset_link_dir
-            / "images"
-            / "train2017"
-        )
-
-    @property
-    def val_image_dir(self):
-        """심볼릭 링크 기준의 COCO validation 이미지 경로를 반환한다."""
-
-        return (
-            self.dataset_link_dir
-            / "images"
-            / "val2017"
-        )
-
-    @property
-    def train_annotation_file(self):
-        """COCO train annotation 파일 경로를 반환한다."""
-
-        return (
-            self.dataset_link_dir
-            / "annotations"
-            / "instances_train2017.json"
-        )
-
-    @property
-    def val_annotation_file(self):
-        """COCO validation annotation 파일 경로를 반환한다."""
-
-        return (
-            self.dataset_link_dir
-            / "annotations"
-            / "instances_val2017.json"
-        )
 
     def to_dict(self) -> dict[str, Any]:
         """설정을 checkpoint에 기록할 수 있는 딕셔너리로 반환한다."""

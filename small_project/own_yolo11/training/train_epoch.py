@@ -3,6 +3,7 @@
 # Forward, backward, AMP,
 # gradient clipping 등에 사용한다.
 import torch
+from tqdm.auto import tqdm
 
 
 def train_epoch(
@@ -160,6 +161,27 @@ def train_epoch(
         data_loader
     )
 
+    # Ultralytics 형식의 진행도 헤더를 출력한다.
+    progress_header = (
+        f"{'Epoch':>11}"
+        f"{'GPU_mem':>11}"
+        f"{'box_loss':>11}"
+        f"{'cls_loss':>11}"
+        f"{'dfl_loss':>11}"
+        f"{'Instances':>11}"
+        f"{'Size':>11}"
+    )
+
+    print(progress_header)
+
+    # 현재 epoch의 배치 진행률을 표시한다.
+    progress_bar = tqdm(
+        data_loader,
+        total=total_batches,
+        dynamic_ncols=True,
+        leave=True,
+    )
+    
     # --------------------------------------------------
     # DataLoader 순회
     # --------------------------------------------------
@@ -171,7 +193,7 @@ def train_epoch(
             targets,
         ),
     ) in enumerate(
-        data_loader
+        progress_bar
     ):
         # 이미지를 GPU 또는 CPU로 이동한다.
         #
@@ -194,8 +216,7 @@ def train_epoch(
         # Forward와 Loss 계산
         # --------------------------------------------------
 
-        # CUDA AMP가 활성화되면
-        # 지원되는 연산을 자동으로 float16으로 처리한다.
+        # 모델 forward에만 AMP float16을 적용한다.
         with torch.autocast(
             device_type=device.type,
             dtype=torch.float16,
@@ -205,40 +226,69 @@ def train_epoch(
                 images
             )
 
-            # train mode의 YOLO11 Head는
-            # raw output 딕셔너리를 반환해야 한다.
-            if not isinstance(
-                predictions,
-                dict,
-            ):
-                raise TypeError(
-                    "train mode 모델 출력은 "
-                    "dict여야 합니다."
-                )
-
-            required_prediction_keys = {
-                "box_logits",
-                "class_logits",
-                "features",
-            }
-
-            missing_prediction_keys = (
-                required_prediction_keys
-                - predictions.keys()
+        # train mode의 YOLO11 Head는
+        # raw output 딕셔너리를 반환해야 한다.
+        if not isinstance(
+            predictions,
+            dict,
+        ):
+            raise TypeError(
+                "train mode 모델 출력은 "
+                "dict여야 합니다."
             )
 
-            # Head 출력 형식이 잘못된 경우
-            # Loss에 넘기기 전에 명확한 오류를 발생시킨다.
-            if missing_prediction_keys:
-                raise KeyError(
-                    "모델 출력에 필요한 값이 없습니다: "
-                    f"{sorted(missing_prediction_keys)}"
-                )
+        required_prediction_keys = {
+            "box_logits",
+            "class_logits",
+            "features",
+        }
 
-            # Box, class, DFL loss를 계산한다.
+        missing_prediction_keys = (
+            required_prediction_keys
+            - predictions.keys()
+        )
+
+        if missing_prediction_keys:
+            raise KeyError(
+                "모델 출력에 필요한 값이 없습니다: "
+                f"{sorted(missing_prediction_keys)}"
+            )
+
+        # 모델의 AMP 출력값을 loss 계산용 FP32로 변환한다.
+        # float() 연산을 사용해도 gradient 연결은 유지된다.
+        loss_predictions = dict(
+            predictions
+        )
+
+        loss_predictions[
+            "box_logits"
+        ] = predictions[
+            "box_logits"
+        ].float()
+
+        loss_predictions[
+            "class_logits"
+        ] = predictions[
+            "class_logits"
+        ].float()
+
+        loss_predictions[
+            "features"
+        ] = [
+            feature.float()
+            for feature
+            in predictions["features"]
+        ]
+
+        # 사용자 정의 loss와 TaskAlignedAssigner는
+        # AMP를 끄고 FP32로 계산한다.
+        with torch.autocast(
+            device_type=device.type,
+            enabled=False,
+        ):
             total_loss, loss_items = (
                 criterion(
-                    predictions,
+                    loss_predictions,
                     targets,
                 )
             )
@@ -371,48 +421,71 @@ def train_epoch(
 
         batch_count += 1
 
-        # --------------------------------------------------
-        # 학습 진행 로그
-        # --------------------------------------------------
+        # 현재 epoch에서 지금까지 계산한 평균 loss
+        average_box_loss = (
+            running_box_loss
+            / batch_count
+        )
 
-        # 지정한 간격 또는 마지막 batch에서
-        # 현재 learning rate와 Loss를 기록한다.
-        if (
-            logger is not None
-            and (
-                (
-                    batch_index + 1
-                )
-                % log_interval
-                == 0
-                or (
-                    batch_index + 1
-                    == total_batches
-                )
+        average_cls_loss = (
+            running_cls_loss
+            / batch_count
+        )
+
+        average_dfl_loss = (
+            running_dfl_loss
+            / batch_count
+        )
+
+        # 현재 배치에 포함된 전체 객체 수
+        instance_count = sum(
+            int(
+                target["labels"].shape[0]
             )
-        ):
-            current_lr = (
-                optimizer.param_groups[
-                    0
-                ][
-                    "lr"
-                ]
+            for target in targets
+        )
+
+        # 입력 이미지 크기
+        input_size = int(
+            images.shape[-1]
+        )
+
+        # 현재 CUDA 예약 메모리
+        if device.type == "cuda":
+            gpu_memory_gb = (
+                torch.cuda.memory_reserved(
+                    device=device
+                )
+                / (1024 ** 3)
             )
 
-            logger.info(
-                "Epoch %d/%d | "
-                "Batch %d/%d | "
-                "LR %.8f | "
-                "Loss %.4f",
-                epoch_index + 1,
-                total_epochs,
-                batch_index + 1,
-                total_batches,
-                current_lr,
-                loss_items[
-                    "total_loss"
-                ].item(),
+            gpu_memory_text = (
+                f"{gpu_memory_gb:.1f}G"
             )
+
+        else:
+            gpu_memory_text = "0G"
+
+        # tqdm 설명 부분을 Ultralytics 형식으로 갱신한다.
+        epoch_text = (
+            f"{epoch_index + 1}"
+            f"/{total_epochs}"
+        )
+
+        progress_description = (
+            f"{epoch_text:>11}"
+            f"{gpu_memory_text:>11}"
+            f"{average_box_loss:>11.3f}"
+            f"{average_cls_loss:>11.3f}"
+            f"{average_dfl_loss:>11.3f}"
+            f"{instance_count:>11}"
+            f"{input_size:>11}"
+        )
+
+        progress_bar.set_description(
+            progress_description,
+            refresh=False,
+        )
 
     # 빈 DataLoader이면
     # 아래 평균 계산에서 0으로 나누게 된다.

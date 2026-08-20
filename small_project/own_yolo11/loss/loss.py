@@ -573,7 +573,7 @@ class YOLO11DetectionLoss(nn.Module):
             targets=targets,
             batch_size=batch_size,
             device=device,
-            dtype=dtype,
+            dtype=torch.float32,
         )
 
         # 예측 분포를 feature-map 좌표의 박스로 복원
