@@ -78,38 +78,95 @@ def build_optimizer(
     # 2. 학습 가능한 Parameter 선택
     # --------------------------------------------------
 
-    # requires_grad=True인 Parameter만 가져온다.
-    #
-    # 일부 계층을 freeze한 경우에는
-    # freeze된 Parameter가 Optimizer에서 제외된다.
-    trainable_parameters = [
-        parameter
-        for parameter in model.parameters()
-        if parameter.requires_grad
-    ]
+   # 일반 Conv weight 등
+    # Weight Decay를 적용할 Parameter
+    decay_parameters = []
 
-    # 모든 Parameter가 freeze돼 있다면
-    # Optimizer를 생성해도 학습되는 값이 없다.
-    if not trainable_parameters:
+    # BatchNorm weight 및 bias 등
+    # Weight Decay를 적용하지 않을 Parameter
+    no_decay_parameters = []
+
+
+    for (
+        name,
+        parameter,
+    ) in model.named_parameters():
+
+        # freeze된 Parameter는
+        # Optimizer에 넣지 않는다.
+        if not parameter.requires_grad:
+            continue
+
+        # --------------------------------------------------
+        # Bias / BatchNorm 계열
+        # --------------------------------------------------
+        #
+        # BatchNorm weight는 일반적으로
+        # 1차원 Parameter다.
+        #
+        # 또한 bias에는 Weight Decay를
+        # 적용하지 않는다.
+        if (
+            parameter.ndim == 1
+            or name.endswith(
+                ".bias"
+            )
+        ):
+
+            no_decay_parameters.append(
+                parameter
+            )
+
+        else:
+
+            # 일반 Conv2d weight 등은
+            # Weight Decay를 적용한다.
+            decay_parameters.append(
+                parameter
+            )
+
+
+    if (
+        not decay_parameters
+        and not no_decay_parameters
+    ):
         raise ValueError(
             "학습 가능한 모델 파라미터가 없습니다."
         )
+
 
     # --------------------------------------------------
     # 3. AdamW Optimizer 생성
     # --------------------------------------------------
 
-    # AdamW는 weight decay를
-    # gradient 기반 Parameter 갱신과 분리해 적용한다.
-    #
-    # 현재 프로젝트에서는 구조를 단순하게 유지하기 위해
-    # 모든 학습 가능 Parameter에 같은 설정을 사용한다.
     optimizer = torch.optim.AdamW(
-        params=trainable_parameters,
-        lr=learning_rate,
-        weight_decay=weight_decay,
-    )
+        [
+            {
+                # 일반 weight
+                "params": (
+                    decay_parameters
+                ),
 
+                "weight_decay": (
+                    weight_decay
+                ),
+            },
+
+            {
+                # Bias와 BatchNorm 계열
+                "params": (
+                    no_decay_parameters
+                ),
+
+                # 이 Parameter에는
+                # Weight Decay를 적용하지 않는다.
+                "weight_decay": 0.0,
+            },
+        ],
+
+        lr=learning_rate,
+    )
+    
     # train_epoch.py에서 사용할
     # 생성된 Optimizer를 반환한다.
     return optimizer

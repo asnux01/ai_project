@@ -10,6 +10,16 @@ from pathlib import Path
 # PyTorch Tensor 처리
 import torch
 
+# PIL Mosaic 이미지를 직접 만들기 위해 사용한다.
+from PIL import Image
+
+# Mosaic에 들어갈 이미지를 resize하기 위해 사용한다.
+from torchvision.transforms import functional as F
+
+from torchvision.transforms.functional import (
+    InterpolationMode
+)
+
 # Torchvision의 COCO JSON 파서와 이미지 로더
 from torchvision.datasets import CocoDetection
 
@@ -1286,6 +1296,9 @@ class Coco2017Dataset(
         auto_download=True,
         allow_insecure_ssl_fallback=False,
         transform=None,
+        mosaic_probability=0.0,
+        total_epochs=1,
+        close_mosaic_epochs=0,
     ):
         """
         Args:
@@ -1452,6 +1465,79 @@ class Coco2017Dataset(
         )
 
         # --------------------------------------------------
+        # Mosaic augmentation 설정
+        # --------------------------------------------------
+
+        if not (
+           0.0
+           <= mosaic_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "mosaic_probability는 "
+                "0과 1 사이여야 합니다."
+            )
+
+        if (
+            isinstance(
+                total_epochs,
+                bool,
+            )
+            or not isinstance(
+                total_epochs,
+                int,
+            )
+            or total_epochs <= 0
+        ):
+            raise ValueError(
+                "total_epochs는 "
+                "1 이상의 정수여야 합니다."
+            )
+
+        if (
+            isinstance(
+                close_mosaic_epochs,
+                bool,
+            )
+            or not isinstance(
+                close_mosaic_epochs,
+                int,
+            )
+            or not (
+                0
+                <= close_mosaic_epochs
+                <= total_epochs
+            )
+        ):
+            raise ValueError(
+                "close_mosaic_epochs는 "
+                "0 이상 total_epochs 이하여야 합니다."
+            )
+
+        self.mosaic_probability = float(
+            mosaic_probability
+        )
+
+        self.total_epochs = int(
+            total_epochs
+        )
+
+        self.close_mosaic_epochs = int(
+            close_mosaic_epochs
+        )
+
+        # persistent_workers=True인 경우에도
+        # 메인 프로세스에서 변경한 epoch을
+        # DataLoader worker가 볼 수 있도록           
+        # 공유 메모리 Tensor로 관리한다.
+        self.current_epoch = torch.zeros(
+            (),
+            dtype=torch.int64,
+        )
+
+        self.current_epoch.share_memory_()
+        
+        # --------------------------------------------------
         # 4. COCO category id를 연속 label로 변환
         # --------------------------------------------------
 
@@ -1481,8 +1567,48 @@ class Coco2017Dataset(
         self.num_classes = len(
             category_ids
         )
+        
+    def set_epoch(
+        self,
+        epoch_index,
+    ):
+        """
+        현재 학습 epoch을 Dataset에 전달한다.
 
-    def __getitem__(
+        persistent_workers=True에서도
+        worker들이 변경된 epoch을 확인할 수 있도록
+        공유 Tensor 값을 변경한다.
+        """
+
+        if (
+            isinstance(
+                epoch_index,
+                bool,
+            )
+            or not isinstance(
+                epoch_index,
+                int,
+            )
+        ):
+            raise TypeError(
+                "epoch_index는 정수여야 합니다."
+            )
+
+        if not (
+            0
+            <= epoch_index
+            < self.total_epochs
+        ):
+            raise ValueError(
+                "epoch_index가 "
+                "전체 epoch 범위를 벗어났습니다."
+            )
+
+        self.current_epoch.fill_(
+            epoch_index
+        )
+
+    def _load_raw_sample(
         self,
         index
     ):
@@ -1682,11 +1808,610 @@ class Coco2017Dataset(
         }
 
         # --------------------------------------------------
-        # 5. 이미지와 target을 함께 변환
+        # 5. 원본 이미지와 target 반환
+        # --------------------------------------------------
+        #
+        # 여기서는 아직 DetectionTransform을
+        # 적용하지 않는다.
+        #
+        # 일반 이미지와 Mosaic 이미지 모두
+        # 최종 __getitem__()에서 공통으로
+        # DetectionTransform을 적용하기 때문이다.
+        return image, target
+
+    def _load_mosaic(
+        self,
+        index,
+    ):
+        """
+        현재 이미지 1장과 무작위 이미지 3장을 이용해
+        2x2 Mosaic 이미지를 만든다.
+
+       최종 반환 크기는 image_size x image_size다.
+       """
+
+        # 최종 모델 입력 크기
+        size = self.image_size
+
+        # --------------------------------------------------
+        # 1. 큰 Mosaic Canvas 생성
+        # --------------------------------------------------
+        #
+        # 먼저 2S x 2S 크기의 큰 Canvas에서
+        # 이미지 4장을 배치한다.
+        mosaic_size = (
+            size
+            * 2
+        )
+
+        mosaic_image = Image.new(
+            mode="RGB",
+            size=(
+                mosaic_size,
+                mosaic_size,
+            ),
+            color=(
+                114,
+                114,
+                114,
+            ),
+        )
+
+
+        # --------------------------------------------------
+        # 2. Mosaic 중심점 무작위 결정
         # --------------------------------------------------
 
-        # Letterbox, 좌우 반전, 색상 변화와
-        # bbox 좌표 변경을 같은 변환에서 처리한다.
+        center_min = (
+            size
+            // 2
+        )
+
+        center_max = (
+            size
+            + size // 2
+        )
+
+        center_x = int(
+            torch.randint(
+                low=center_min,
+                high=center_max + 1,
+                size=(1,),
+            ).item()
+        )
+
+        center_y = int(
+            torch.randint(
+                low=center_min,
+                high=center_max + 1,
+                size=(1,),
+            ).item()
+        )
+
+
+        # --------------------------------------------------
+        # 3. 사용할 이미지 4장 선택
+        # --------------------------------------------------
+
+        indices = [
+            index
+        ]
+
+        for _ in range(3):
+
+            random_index = int(
+                torch.randint(
+                    low=0,
+                    high=len(self),
+                    size=(1,),
+                ).item()
+            )
+
+            indices.append(
+                random_index
+            )
+
+
+        mosaic_boxes = []
+        mosaic_labels = []
+
+
+        # --------------------------------------------------
+        # 4. 이미지 4장을 각각 배치
+        # --------------------------------------------------
+
+        for mosaic_index, sample_index in enumerate(
+            indices
+        ):
+
+            # 원본 PIL 이미지와 bbox를 읽는다.
+            image, target = (
+                self._load_raw_sample(
+                    sample_index
+                )
+            )
+
+            boxes = (
+                target["boxes"]
+                .clone()
+                .to(
+                    dtype=torch.float32
+                )
+            )
+
+            labels = (
+                target["labels"]
+                .clone()
+                .to(
+                    dtype=torch.int64
+                )
+            )
+
+
+            original_width, original_height = (
+                image.size
+            )
+
+
+            # --------------------------------------------------
+            # 5. 원본 비율을 유지하며 resize
+            # --------------------------------------------------
+
+            resize_scale = min(
+                size
+                / float(
+                    original_width
+                ),
+                size
+                / float(
+                    original_height
+                ),
+            )
+            resized_width = max(
+                1,
+                int(
+                    round(
+                        original_width
+                        * resize_scale
+                    )
+                ),
+            )
+            resized_height = max(
+                1,
+                int(
+                    round(
+                        original_height
+                        * resize_scale
+                    )
+                ),
+            )
+
+            image = F.resize(
+                image,
+                [
+                    resized_height,
+                    resized_width,
+                ],
+                interpolation=(
+                    InterpolationMode.BILINEAR
+                ),
+                antialias=True,
+            )
+
+            # bbox에도 같은 resize 비율 적용
+            if boxes.numel() > 0:
+
+                boxes[:, [0, 2]] *= (
+                    resize_scale
+                )
+
+                boxes[:, [1, 3]] *= (
+                    resize_scale
+                )
+
+
+            width = resized_width
+            height = resized_height
+
+
+            # --------------------------------------------------
+            # 6. Mosaic 위치 계산
+            # --------------------------------------------------
+
+            if mosaic_index == 0:
+                # 왼쪽 위
+
+                x1a = max(
+                    center_x - width,
+                    0,
+                )
+
+                y1a = max(
+                    center_y - height,
+                    0,
+                )
+
+                x2a = center_x
+                y2a = center_y
+
+                x1b = (
+                    width
+                    - (
+                        x2a
+                        - x1a
+                    )
+                )
+
+                y1b = (
+                    height
+                    - (
+                        y2a
+                        - y1a
+                    )
+                )
+
+                x2b = width
+                y2b = height
+
+
+            elif mosaic_index == 1:
+                # 오른쪽 위
+
+                x1a = center_x
+
+                y1a = max(
+                    center_y - height,
+                    0,
+                )
+
+                x2a = min(
+                    center_x + width,
+                    mosaic_size,
+                )
+
+                y2a = center_y
+
+                x1b = 0
+
+                y1b = (
+                    height
+                    - (
+                        y2a
+                        - y1a
+                    )
+                )
+
+                x2b = (
+                    x2a
+                    - x1a
+                )
+
+                y2b = height
+
+
+            elif mosaic_index == 2:
+                # 왼쪽 아래
+
+                x1a = max(
+                    center_x - width,
+                    0,
+                )
+
+                y1a = center_y
+
+                x2a = center_x
+
+                y2a = min(
+                    center_y + height,
+                    mosaic_size,
+                )
+
+                x1b = (
+                    width
+                    - (
+                        x2a
+                        - x1a
+                    )
+                )
+
+                y1b = 0
+
+                x2b = width
+
+                y2b = (
+                    y2a
+                    - y1a
+                )
+
+
+            else:
+                # 오른쪽 아래
+
+                x1a = center_x
+                y1a = center_y
+
+                x2a = min(
+                    center_x + width,
+                    mosaic_size,
+                )
+
+                y2a = min(
+                    center_y + height,
+                    mosaic_size,
+                )
+
+                x1b = 0
+                y1b = 0
+
+                x2b = (
+                    x2a
+                    - x1a
+                )
+
+                y2b = (
+                    y2a
+                    - y1a
+                )
+
+
+            # --------------------------------------------------
+            # 7. 해당 이미지 영역을 Canvas에 붙인다.
+            # --------------------------------------------------
+
+            cropped_image = image.crop(
+                (
+                    x1b,
+                    y1b,
+                    x2b,
+                    y2b,
+                )
+            )
+
+            mosaic_image.paste(
+                cropped_image,
+                (
+                    x1a,
+                    y1a,
+                ),
+            )
+
+
+            # --------------------------------------------------
+            # 8. bbox 좌표를 Mosaic 위치로 이동
+            # --------------------------------------------------
+
+            if boxes.numel() > 0:
+                
+                offset_x = (
+                    x1a
+                    - x1b
+                )
+
+                offset_y = (
+                    y1a
+                    - y1b
+                )
+
+                boxes[:, [0, 2]] += (
+                    float(
+                        offset_x
+                    )
+                )
+
+                boxes[:, [1, 3]] += (
+                    float(
+                        offset_y
+                   )
+                )
+
+
+            mosaic_boxes.append(
+                boxes
+            )
+
+            mosaic_labels.append(
+                labels
+            )
+
+
+        # --------------------------------------------------
+        # 9. 네 이미지의 bbox/label 연결
+        # --------------------------------------------------
+
+        boxes = torch.cat(
+            mosaic_boxes,
+            dim=0,
+        )
+
+        labels = torch.cat(
+            mosaic_labels,
+           dim=0,
+        )
+
+
+        # --------------------------------------------------
+        # 10. 2S x 2S Canvas에서
+        #     최종 S x S 영역 추출
+        # --------------------------------------------------
+
+        crop_left = (
+            size
+            // 2
+        )
+
+        crop_top = (
+            size
+            // 2
+        )
+
+        crop_right = (
+            crop_left
+            + size
+        )
+
+        crop_bottom = (
+            crop_top
+            + size
+        )
+
+        mosaic_image = (
+            mosaic_image.crop(
+                (
+                    crop_left,
+                    crop_top,
+                    crop_right,
+                    crop_bottom,
+                )
+            )
+        )
+
+        # --------------------------------------------------
+        # 11. bbox도 Crop 기준으로 이동
+        # --------------------------------------------------
+
+        if boxes.numel() > 0:
+
+            boxes[:, [0, 2]] -= (
+                float(
+                    crop_left
+                )
+            )
+
+            boxes[:, [1, 3]] -= (
+                float(
+                    crop_top
+                )
+            )
+
+            boxes[:, [0, 2]] = (
+                boxes[:, [0, 2]].clamp_(
+                    min=0.0,
+                    max=float(
+                        size
+                    ),
+                )
+            )
+
+            boxes[:, [1, 3]] = (
+                boxes[:, [1, 3]].clamp_(
+                    min=0.0,
+                    max=float(
+                        size
+                    ),
+                )
+            )
+
+
+            # --------------------------------------------------
+            # 12. Crop 결과 너무 작아진 bbox 제거
+            # --------------------------------------------------
+
+            box_width = (
+                boxes[:, 2]
+                - boxes[:, 0]
+            )
+            
+            box_height = (
+                boxes[:, 3]
+                - boxes[:, 1]
+            )
+
+            valid_mask = (
+                (box_width > 2.0)
+                & (box_height > 2.0)
+            )
+
+            boxes = boxes[
+                valid_mask
+            ]
+
+            labels = labels[
+                valid_mask
+            ]
+    
+        
+        # --------------------------------------------------
+        # 13. Mosaic target 생성
+        # --------------------------------------------------
+
+        target = {
+            "boxes": boxes,
+            "labels": labels,
+
+            # Mosaic은 여러 이미지로 만들어지지만
+            # 학습 loss에서는 image_id를 사용하지 않으므로
+            # 대표로 현재 index의 image id를 기록한다.
+            "image_id": torch.tensor(
+                self.ids[index],
+                dtype=torch.int64,
+            ),
+        }
+
+        return mosaic_image, target
+
+    def __getitem__(
+        self,
+        index,
+    ):
+        """
+        일반 이미지 또는 Mosaic 이미지를 선택하고,
+        최종 DetectionTransform을 적용한다.
+        """
+
+        # 현재 epoch을 공유 Tensor에서 읽는다.
+        epoch_index = int(
+            self.current_epoch.item()
+        )
+
+        # 마지막 close_mosaic_epochs 구간이
+        # 시작되는 epoch이다.
+        mosaic_stop_epoch = max(
+            self.total_epochs
+            - self.close_mosaic_epochs,
+            0,
+        )
+
+        # --------------------------------------------------
+        # Mosaic 적용 여부 결정
+        # --------------------------------------------------
+
+        use_mosaic = (
+            self.mosaic_probability
+            > 0.0
+
+            and epoch_index
+            < mosaic_stop_epoch
+
+            and torch.rand(
+                1
+            ).item()
+            < self.mosaic_probability
+        )
+
+
+        if use_mosaic:
+
+            # 4장의 이미지를 합친다.
+            image, target = (
+                self._load_mosaic(
+                    index
+                )
+            )
+
+        else:
+
+            # 일반 COCO 이미지 1장을 사용한다.
+            image, target = (
+                self._load_raw_sample(
+                    index
+                )
+            )
+
+
+        # --------------------------------------------------
+        # 최종 데이터 증강 + Letterbox
+        # --------------------------------------------------
+
         image, target = (
             self.detection_transform(
                 image,
@@ -1694,8 +2419,11 @@ class Coco2017Dataset(
             )
         )
 
-        # 사용자 정의 transform이 잘못 연결된 경우
-        # DataLoader에서 늦게 실패하지 않도록 검사한다.
+
+        # --------------------------------------------------
+        # 결과 유효성 검사
+        # --------------------------------------------------
+
         if not isinstance(
             image,
             torch.Tensor,
@@ -1705,8 +2433,6 @@ class Coco2017Dataset(
                 "Tensor여야 합니다."
             )
 
-        # 모든 이미지는 DataLoader에서 쌓을 수 있도록
-        # 동일한 [3, image_size, image_size]여야 한다.
         if image.shape != (
             3,
             self.image_size,
@@ -1728,7 +2454,6 @@ class Coco2017Dataset(
             )
 
         return image, target
-
 
 # --------------------------------------------------
 # DataLoader용 collate 함수

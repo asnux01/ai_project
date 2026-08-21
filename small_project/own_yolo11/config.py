@@ -153,6 +153,15 @@ class TrainConfig:
     contrast: float = 0.2
     saturation: float = 0.2
     hue: float = 0.02
+    
+    # --------------------------------------------------
+    # 기하학적 데이터 증강 설정
+    # --------------------------------------------------
+
+    mosaic_probability: float = 1.0
+    close_mosaic_epochs: int = 10
+    translate_fraction: float = 0.1
+    scale_gain: float = 0.5
 
     # --------------------------------------------------
     # 재현성과 기록 설정
@@ -407,6 +416,65 @@ class TrainConfig:
             raise ValueError(
                 "horizontal_flip_probability는 "
                 "0과 1 사이여야 합니다."
+            )
+        
+        # Mosaic 적용 확률 검사
+        if not (
+            0.0
+            <= self.mosaic_probability
+            <= 1.0
+        ):
+            raise ValueError(
+                "mosaic_probability는 "
+                "0과 1 사이여야 합니다."
+            )
+        
+        if (
+            isinstance(
+                self.close_mosaic_epochs,
+                bool,
+            )
+            or not isinstance(
+                self.close_mosaic_epochs,
+                int,
+            )
+        ):
+            raise TypeError(
+                "close_mosaic_epochs는 "
+                "정수여야 합니다."
+            )
+
+        if not (
+            0
+            <= self.close_mosaic_epochs
+            <= self.epochs
+        ):
+            raise ValueError(
+                "close_mosaic_epochs는 "
+                "0 이상 epochs 이하여야 합니다."
+            )
+
+        # Translate는 이미지 크기에 대한 비율이다.
+        if not (
+            0.0
+            <= self.translate_fraction
+            <= 1.0
+        ):
+            raise ValueError(
+                "translate_fraction은 "
+                "0과 1 사이여야 합니다."
+            )
+
+        # scale_gain=1 이상이면
+        # 최소 scale이 0 이하가 될 수 있으므로 제한한다.
+        if not (
+            0.0
+            <= self.scale_gain
+            < 1.0
+        ):
+            raise ValueError(
+                "scale_gain은 "
+                "0 이상 1 미만이어야 합니다."
             )
 
         if self.seed < 0:

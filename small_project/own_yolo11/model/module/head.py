@@ -4,6 +4,7 @@
 
 import torch
 import torch.nn as nn
+import math
 
 from ..block import BoxBranch, ClassBranch, DFL
 from ..utils import make_anchors, dist2bbox
@@ -78,7 +79,71 @@ class Head(nn.Module):
         self.dfl = DFL(
             reg_max=reg_max
         )
+        
+        # Detect 출력층의 초기 prediction이
+        # 객체 탐지 학습에 적합하도록
+        # Box/Class bias를 초기화한다.
+        self._initialize_biases()
 
+    def _initialize_biases(
+        self,
+    ):
+        """
+        Box branch와 Class branch의
+        마지막 Conv2d bias를 초기화한다.
+        """
+
+        # P3, P4, P5의 stride와
+        # 각각의 Box/Class branch를 함께 순회한다.
+        for (
+            stride,
+            box_branch,
+            class_branch,
+        ) in zip(
+            self.strides,
+            self.box_branches,
+            self.class_branches,
+        ):
+
+            # --------------------------------------------------
+            # Box branch bias 초기화
+            # --------------------------------------------------
+            #
+            # Box branch의 마지막 Conv는
+            #
+            # [B, 4 * reg_max, H, W]
+            #
+            # 형태의 거리 분포를 출력한다.
+            #
+            # 초기 box prediction이 지나치게 작은 값에
+            # 몰리지 않도록 출력 bias를 2.0으로 초기화한다.
+            nn.init.constant_(
+                box_branch.conv2d.bias,
+                2.0,
+            )
+
+            # --------------------------------------------------
+            # Class branch bias 초기화
+            # --------------------------------------------------
+            #
+            # feature map의 대부분 위치에는 객체가 없으므로
+            # 초기 class probability를 매우 낮게 설정한다.
+            #
+            # stride가 작을수록 feature map 위치 수가 많기 때문에
+            # stride별로 서로 다른 초기 bias가 계산된다.
+            class_bias = math.log(
+                5.0
+                / self.num_classes
+                / (640.0 / float(stride)) ** 2
+            )
+
+            # Class branch 마지막 Conv의 모든 class bias를
+            # 동일한 초기값으로 설정한다.
+            nn.init.constant_(
+                class_branch.conv2d.bias,
+                class_bias,
+            )
+    
     # 포워드
     def forward(self, features):
 

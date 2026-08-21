@@ -355,7 +355,33 @@ def main():
             )
         )
     )
+    
+    # 이번 학습의 시작 시간 추출
+    run_timestamp = (
+        log_path.stem
+        .removeprefix(
+            "train_"
+        )
+    )
+    
+    # 최근 checkpoint 경로
+    last_checkpoint_path = (
+        config.checkpoint_dir
+        / (
+            f"last_"
+            f"{run_timestamp}.pt"
+        )
+    )
 
+    # 최고 mAP checkpoint 경로
+    best_checkpoint_path = (
+        config.checkpoint_dir
+        / (
+            f"best_"
+            f"{run_timestamp}.pt"
+        )
+    )
+    
     try:
         # 실행 설정을 로그에 남기면
         # 나중에 실험 조건을 다시 확인할 수 있다.
@@ -518,6 +544,15 @@ def main():
                 ),
                 transform=(
                     train_transform
+                ),
+                mosaic_probability=(
+                    config.mosaic_probability
+                ),
+                total_epochs=(
+                    config.epochs
+                ),
+                close_mosaic_epochs=(
+                    config.close_mosaic_epochs
                 ),
             )
         )
@@ -812,6 +847,11 @@ def main():
             "inf"
         )
 
+        # 지금까지 기록한 최고 mAP50-95
+        best_map = float(
+            "-inf"
+        )
+
         # --------------------------------------------------
         # 10. Checkpoint 복원
         # --------------------------------------------------
@@ -869,6 +909,12 @@ def main():
                     "best_val_loss"
                 ]
             )
+            
+            best_map = (
+                resume_state[
+                    "best_map"
+                ]
+            )
 
             logger.info(
                 "checkpoint에서 학습 재개: %s | "
@@ -903,6 +949,10 @@ def main():
             start_epoch,
             config.epochs,
         ):
+            train_dataset.set_epoch(
+                epoch_index
+            )
+            
             logger.info(
                 "========== "
                 "Epoch %d/%d 시작 "
@@ -993,22 +1043,43 @@ def main():
                 ),
             )
 
-            # 현재 validation total loss가
-            # 이전 best보다 작은지 확인한다.
-            is_best = (
-                val_result[
+            # --------------------------------------------------
+            # Validation loss의 최저값은
+            # 학습 상태 기록용으로 계속 관리한다.
+            # --------------------------------------------------
+
+            current_val_loss = float(
+            val_result[
                     "total_loss"
                 ]
-                < best_val_loss
+            )
+
+            best_val_loss = min(
+                best_val_loss,
+                current_val_loss,
+            )
+
+
+            # --------------------------------------------------
+            # Best checkpoint는 mAP50-95 기준으로 선택
+            # --------------------------------------------------
+
+            current_map = float(
+                val_result[
+                    "map"
+                ]
+            )
+
+            is_best = (
+                current_map
+                > best_map
             )
 
             if is_best:
-                best_val_loss = (
-                    val_result[
-                        "total_loss"
-                    ]
+                best_map = (
+                    current_map
                 )
-
+            
             # --------------------------------------------------
             # 12. Checkpoint 생성 및 저장
             # --------------------------------------------------
@@ -1035,6 +1106,11 @@ def main():
                     best_val_loss=(
                         best_val_loss
                     ),
+                    # 최고 mAP50-95도 checkpoint에 저장한다.
+                    best_map=(
+                        best_map
+                    ),
+                    
                     global_step=(
                         global_step
                     ),
@@ -1065,8 +1141,7 @@ def main():
                         checkpoint
                     ),
                     checkpoint_path=(
-                        config.checkpoint_dir
-                        / "last.pt"
+                        last_checkpoint_path
                     ),
                 )
             )
@@ -1076,7 +1151,7 @@ def main():
                 last_path,
             )
 
-            # Validation total loss가 좋아진 경우에만
+            # mAP50-95가 이전 최고값보다 높아진 경우에만
             # best.pt를 갱신한다.
             if is_best:
                 best_path = (
@@ -1085,17 +1160,16 @@ def main():
                             checkpoint
                         ),
                         checkpoint_path=(
-                            config.checkpoint_dir
-                            / "best.pt"
+                            best_checkpoint_path
                         ),
                     )
                 )
 
                 logger.info(
                     "최적 checkpoint 저장: %s | "
-                    "Val total %.4f",
+                    "mAP50-95 %.4f",
                     best_path,
-                    best_val_loss,
+                    best_map,
                 )
 
         # --------------------------------------------------
@@ -1104,7 +1178,9 @@ def main():
 
         logger.info(
             "학습 완료 | "
+            "best mAP50-95: %.4f | "
             "best validation total loss: %.4f",
+            best_map,
             best_val_loss,
         )
 

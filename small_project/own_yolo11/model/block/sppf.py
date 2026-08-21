@@ -33,7 +33,8 @@ class SPPF(nn.Module):
             out_channels=ch_h,
             kernel_size=1,
             stride=1,
-            padding=0
+            padding=0,
+            activation="identity"
         )
         
         # Maxpool2d

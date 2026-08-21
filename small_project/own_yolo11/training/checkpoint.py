@@ -23,6 +23,7 @@ def build_checkpoint(
     scaler,
     ema,
     best_val_loss,
+    best_map,
     global_step,
     model_config,
     train_config,
@@ -135,6 +136,11 @@ def build_checkpoint(
         # 지금까지 가장 작은 validation loss
         "best_val_loss": float(
             best_val_loss
+        ),
+        
+        # 지금까지 기록한 최고 mAP50-95
+        "best_map": float(
+            best_map
         ),
     }
 
@@ -527,6 +533,38 @@ def load_checkpoint(
         ]
     )
 
+    # 최고 mAP50-95 복원
+    saved_val_result = (
+        checkpoint.get(
+            "val_loss"
+        )
+    )
+
+    if isinstance(
+        saved_val_result,
+        dict,
+    ):
+        fallback_map = float(
+            saved_val_result.get(
+                "map",
+                float(
+                    "-inf"
+                ),
+            )
+        )
+
+    else:
+        fallback_map = float(
+            "-inf"
+        )
+
+    best_map = float(
+        checkpoint.get(
+            "best_map",
+            fallback_map,
+        )
+    )
+    
     if (
         epoch < 0
         or global_step < 0
@@ -546,6 +584,9 @@ def load_checkpoint(
         "global_step": global_step,
         "best_val_loss": (
             best_val_loss
+        ),
+        "best_map": (
+            best_map
         ),
         "model_config": (
             checkpoint[
