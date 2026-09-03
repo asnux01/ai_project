@@ -21,9 +21,7 @@ def build_optimizer(
 
     # 학습 가능한 Parameter 확인
     if not parameters:
-        raise ValueError(
-            "Model has no trainable parameters."
-        )
+        raise ValueError("Model has no trainable parameters.")
 
     # Adam Optimizer 생성
     optimizer = torch.optim.Adam(
