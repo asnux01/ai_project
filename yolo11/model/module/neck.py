@@ -107,7 +107,7 @@ class Neck(nn.Module):
             shortcut=shortcut
         )
         
-        # Bottomup1
+        # Bottomup2
         # Conv
         self.conv1 = Conv(
             in_channels=ch_min512,
@@ -178,7 +178,7 @@ class Neck(nn.Module):
         # 헤드 출력 1
         head1 = y
         
-        # Bottomup1
+        # Bottomup2
         # Conv
         y = self.conv1(y)
                 

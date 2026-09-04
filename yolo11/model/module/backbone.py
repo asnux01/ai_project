@@ -41,7 +41,7 @@ class Backbone(nn.Module):
             )
         
         # 채널 파라미터
-        # 채널 수가 0이 되는걸 방지
+        # 채널 수가 0이 되는 것을 방지
         ch_min64 = max(int(min(64, max_channels) * width_factor), 1)
         ch_min128 = max(int(min(128, max_channels) * width_factor), 1)
         ch_min256 = max(int(min(256, max_channels) * width_factor), 1)
@@ -49,7 +49,7 @@ class Backbone(nn.Module):
         ch_min1024 = max(int(min(1024, max_channels) * width_factor), 1)
         
         # 카운터
-        # 정수로 변환하고 반복 회수를 최소 1로 설정
+        # 정수로 변환하고 반복 횟수를 최소 1로 설정
         n = max(int(2 * depth_factor), 1)
         
         # 포워드 접근 가능 파라미터

@@ -95,7 +95,7 @@ class Trainer:
             # 기준 Metric 확인
             if self.monitor not in val_metrics:
                 raise KeyError(
-                    f"Validation metrics에 '{self.monitor}'가"
+                    f"Validation metrics에 '{self.monitor}'가 "
                     "validator에서 반환되지 않았습니다."
                 )
                 

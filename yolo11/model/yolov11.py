@@ -18,7 +18,7 @@ class Yolov11(nn.Module):
         strides=(8,16,32)
     ):
         
-        # PyTorch 사용을 위해 nn.Module 쵝화
+        # PyTorch 사용을 위해 nn.Module 최적화
         super(Yolov11, self).__init__()
         
         # 유효성 검사

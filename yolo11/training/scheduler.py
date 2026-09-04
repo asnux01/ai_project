@@ -8,26 +8,26 @@ class WarmupCosineScheduler:
         self,
         optimizer,
         epochs,
-        steps__per_epoch,
-        warmup_epcohs=3.0,
+        steps_per_epoch,
+        warmup_epochs=3.0,
         min_lr_ratio=0.01
     ):
         
         # 입력 검사
         if epochs <= 0:
             raise ValueError("epochs는 0보다 커야 합니다.")
-        if steps__per_epoch <= 0:
+        if steps_per_epoch <= 0:
             raise ValueError("steps__per_epoch는 0보다 커야 합니다.")
-        if warmup_epcohs < 0:
+        if warmup_epochs < 0:
             raise ValueError("warmup_epcohs는 0보다 크거나 같아야 합니다.")
         if not 0.0 < min_lr_ratio <= 1.0:
             raise ValueError("min_lr_ratio는 0보다 크고 1보다 작거나 같아야 합니다.")
         
         # 파라미터
         self.optimizer = optimizer
-        self.total_steps = epochs * steps__per_epoch
+        self.total_steps = epochs * steps_per_epoch
         self.warmup_steps = min(
-            int(round(warmup_epcohs * steps__per_epoch)),
+            int(round(warmup_epochs * steps_per_epoch)),
             self.total_steps
         )
         self.min_lr_ratio = min_lr_ratio
@@ -44,6 +44,7 @@ class WarmupCosineScheduler:
         
         # 첫 Step Learning Rate 설정
         self._set_lr(self._get_lr_scale(self.current_step))
+        
         
     def _get_lr_scale(self, step):
         
@@ -86,6 +87,7 @@ class WarmupCosineScheduler:
         
         return lr_scale
     
+    
     def _set_lr(self, lr_scale):
         
         # OPtimizer Learning Rate 변경
@@ -94,6 +96,7 @@ class WarmupCosineScheduler:
             self.base_lrs
         ):
             param_group["lr"] = base_lr * lr_scale
+    
     
     def step(self):
         
@@ -106,6 +109,7 @@ class WarmupCosineScheduler:
         # Learning Rate 적용
         self._set_lr(lr_scale)
         
+        
     def get_last_lr(self):
         
         # 현재 Learning Rate 반환
@@ -115,12 +119,14 @@ class WarmupCosineScheduler:
             in self.optimizer.param_groups
         ]
         
+        
     def state_dict(self):
         
         # Scheduler 상태 반환
         return {
             "current_step": self.current_step
         }
+        
         
     def load_state_dict(self, state_dict):
         
@@ -131,20 +137,21 @@ class WarmupCosineScheduler:
         lr_scale = self._get_lr_scale(self.current_step)
         self._set_lr(lr_scale)
         
-    def bulid_scheduler(
-        optimizer,
-        epochs,
-        steps__per_epoch,
-        warmup_epcohs=3.0,
-        min_lr_ratio=0.01
-    ):
-        # Scheduler 생성
-        scheduler = WarmupCosineScheduler(
-            optimizer=optimizer,
-            epochs=epochs,
-            steps__per_epoch=steps__per_epoch,
-            warmup_epcohs=warmup_epcohs,
-            min_lr_ratio=min_lr_ratio
-        )
         
-        return scheduler
+def build_scheduler(
+    optimizer,
+    epochs,
+    steps_per_epoch,
+    warmup_epochs=3.0,
+    min_lr_ratio=0.01
+):
+    # Scheduler 생성
+    scheduler = WarmupCosineScheduler(
+        optimizer=optimizer,
+        epochs=epochs,
+        steps_per_epoch=steps_per_epoch,
+        warmup_epochs=warmup_epochs,
+        min_lr_ratio=min_lr_ratio
+    )
+        
+    return scheduler

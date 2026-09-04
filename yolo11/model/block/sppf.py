@@ -24,7 +24,7 @@ class SPPF(nn.Module):
         ch_i = in_channels          # 입력 채널 수 
         ch_o = out_channels         # 출력 채널 수
         ch_h = out_channels // 2    # hidden 채널 수
-        ch_c = ch_h * 4             # concated 채널 수
+        ch_c = ch_h * 4             # concat 후 채널 수
         mp_k = k                    # maxpool 커널 크기
         
         # Conv0

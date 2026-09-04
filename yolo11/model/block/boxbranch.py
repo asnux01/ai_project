@@ -24,7 +24,7 @@ class BoxBranch(nn.Module):
         ch_h = hidden_channels
         ch_o = 4 * reg_max
         
-        # 첫 번째Conv
+        # 첫 번째 Conv
         self.conv0 = Conv(
             in_channels=ch_i,
             out_channels=ch_h,

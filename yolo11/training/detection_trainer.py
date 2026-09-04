@@ -54,7 +54,7 @@ class DetectionTrainer:
         total_loss = 0.0
         total_box_loss = 0.0
         total_cls_loss = 0.0
-        total_det_loss = 0.0
+        total_dfl_loss = 0.0
         
         # Step 수
         num_steps = 0
@@ -108,7 +108,7 @@ class DetectionTrainer:
             total_loss += loss.detach().item()
             total_box_loss += loss_items["box_loss"].item()
             total_cls_loss += loss_items["cls_loss"].item()
-            total_det_loss += loss_items["det_loss"].item()
+            total_dfl_loss += loss_items["dfl_loss"].item()
             
             # Step 수 증가
             num_steps += 1
@@ -122,7 +122,7 @@ class DetectionTrainer:
             "loss": total_loss / num_steps,
             "box_loss": total_box_loss / num_steps,
             "cls_loss": total_cls_loss / num_steps,
-            "det_loss": total_det_loss / num_steps,
+            "dfl_loss": total_dfl_loss / num_steps,
             "lr": self.optimizer.param_groups[0]["lr"]
         }
 
