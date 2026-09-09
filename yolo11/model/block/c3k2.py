@@ -64,7 +64,7 @@ class C3K2(nn.Module):
         )
         
         # Bottleneck or C3K
-        # Ck3 and Bottleneck list
+        # C3k and Bottleneck list
         self.blocks = nn.ModuleList()
                                 
         # Both append

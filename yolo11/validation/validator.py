@@ -1,6 +1,8 @@
 # 라이브러리
 import torch
 
+from ultralytics.utils.tqdm import TQDM
+
 from .metrics import DetectionMetrics
 
 
@@ -88,12 +90,29 @@ class Validator:
     
         # Step 수
         num_steps = 0
+        
+        # 처리한 객체 수
+        processed_instances = 0
+        
+        # Validation Progress Bar Header
+        print(
+            f"{'class':>18}"
+            f"{'Images':>11}"
+            f"{'Instances':>11}"
+        )
+        
+        # Progress Bar
+        progress_bar = TQDM(
+            val_loader,
+            total=len(val_loader),
+            leave=True
+        )
 
         # Gradient 계산 비활성화
         with torch.no_grad():
             
             # Validation Batch 순회
-            for batch in val_loader:
+            for batch in progress_bar:
                 
                 # Batch Device 이동
                 batch = self._move_batch_to_device(batch)
@@ -131,6 +150,22 @@ class Validator:
                 
                 # Step 증가
                 num_steps += 1
+                
+                # 처리한 객체 수 누적
+                processed_instances += batch["cls"].numel()
+                
+                # 현재까지 처리한 Image 수
+                processed_images = min(
+                    num_steps * val_loader.batch_size,
+                    len(val_loader.dataset)
+                )
+                
+                # Validation Progress Bar 갱신
+                progress_bar.set_description(
+                    f"{'all':>18}"
+                    f"{processed_images:>11}"
+                    f"{processed_instances:>11}"
+                )
                 
             # Empty DataLoader 검사
             if num_steps == 0:

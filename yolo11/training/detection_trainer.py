@@ -1,6 +1,8 @@
 # 라이브러리
 import torch
 
+from ultralytics.utils.tqdm import TQDM
+
 
 class DetectionTrainer:
     
@@ -44,8 +46,26 @@ class DetectionTrainer:
                 device_batch[key] = value
 
         return device_batch
+    
             
-    def train_epoch(self, train_loader):
+    def _get_gpu_memory(self):
+        
+        # CUDA를 사용하지 않는 경우
+        if self.device.type != "cuda":
+            return "0G"
+        
+        # 현재 Device의 예약된 GPU Memory
+        memory = torch.cuda.memory_reserved(self.device) / 1e9
+        
+        return f"{memory:.2f}G"
+    
+               
+    def train_epoch(
+        self, 
+        train_loader,
+        epoch,
+        epochs
+    ):
         
         # Model 학습 모드
         self.model.train()
@@ -59,8 +79,27 @@ class DetectionTrainer:
         # Step 수
         num_steps = 0
         
+        # Ultralytics 스타일 Header 출력
+        print(
+            "\n"
+            f"{'Epoch':>11}"
+            f"{'GPU_mem':>11}"
+            f"{'box_loss':>11}"
+            f"{'cls_loss':>11}"
+            f"{'dfl_loss':>11}"
+            f"{'Instances':>11}"
+            f"{'Size':>11}"
+        )
+
+        # Ultralytics TQDM Progress Bar
+        progress_bar = TQDM(
+            train_loader,
+            total=len(train_loader),
+            leave=True
+        )
+        
         # Batch 학습
-        for batch in train_loader:
+        for batch in progress_bar:
             
             # Batch를 Device로 이동
             batch = self._move_to_device(batch)
@@ -112,6 +151,31 @@ class DetectionTrainer:
             
             # Step 수 증가
             num_steps += 1
+            
+            # 현재까지의 평균 Loss
+            avg_box_loss = total_box_loss / num_steps
+            avg_cls_loss = total_cls_loss / num_steps
+            avg_dfl_loss = total_dfl_loss / num_steps
+            
+            # 현재 Batch의 객체 수
+            num_instances = batch["cls"].numel()
+            
+            # 입력 Image 크기
+            image_size = images.shape[-1]
+            
+            # GPU Memory 사용량
+            gpu_memory = self._get_gpu_memory()
+            
+            # Progress Bar 설명 갱신
+            progress_bar.set_description(
+                f"{epoch + 1:>5}/{epochs:<5}"
+                f"{gpu_memory:>11}"
+                f"{avg_box_loss:>11.3f}"
+                f"{avg_cls_loss:>11.3f}"
+                f"{avg_dfl_loss:>11.3f}"
+                f"{num_instances:>11}"
+                f"{image_size:>11}"
+            )
             
         # Empty Dataloader 검사
         if num_steps == 0:

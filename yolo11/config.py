@@ -7,10 +7,10 @@ import torch
 class Config:
     
     # Project 경로
-    project_root = Path(__file__).resolve().parent
+    project_root = Path("/home/jblee")
     
     # Dataset 경로
-    dataset_root = project_root / "datasets" / "coco"
+    dataset_root = project_root / "dataset" / "coco"
     train_image_dir = dataset_root / "images" / "train2017"
     val_image_dir = dataset_root / "images" / "val2017"
     train_annotation_file = dataset_root / "annotations" / "instances_train2017.json"
@@ -40,7 +40,7 @@ class Config:
     cls_gain = 0.5
     dfl_gain = 1.5
     tal_topk = 10
-    tal_alpha = 0.8
+    tal_alpha = 0.5
     tal_beta = 6.0
     
     # Optimizer
@@ -69,7 +69,7 @@ class Config:
     nms_iou_threshold = 0.7
     
     # Checkpoint
-    checkpoint_dir = project_root / "checkpoints"
+    checkpoint_dir = project_root / "ai_project" / "yolo11" / "checkpoints"
     monitor = "map50_95"
     monitor_mode = "max"
     resume_path = None

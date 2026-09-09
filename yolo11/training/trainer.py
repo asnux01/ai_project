@@ -78,7 +78,11 @@ class Trainer:
         for epoch in range(start_epoch, self.epochs):
             
             # 학습
-            train_metrics = self.detection_trainer.train_epoch(train_loader)
+            train_metrics = self.detection_trainer.train_epoch(
+                train_loader=train_loader,
+                epoch=epoch,
+                epochs=self.epochs
+            )
             
             # Validation Model 선택
             if self.ema is not None:

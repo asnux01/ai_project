@@ -17,9 +17,9 @@ class WarmupCosineScheduler:
         if epochs <= 0:
             raise ValueError("epochs는 0보다 커야 합니다.")
         if steps_per_epoch <= 0:
-            raise ValueError("steps__per_epoch는 0보다 커야 합니다.")
+            raise ValueError("steps_per_epoch는 0보다 커야 합니다.")
         if warmup_epochs < 0:
-            raise ValueError("warmup_epcohs는 0보다 크거나 같아야 합니다.")
+            raise ValueError("warmup_epochs는 0보다 크거나 같아야 합니다.")
         if not 0.0 < min_lr_ratio <= 1.0:
             raise ValueError("min_lr_ratio는 0보다 크고 1보다 작거나 같아야 합니다.")
         

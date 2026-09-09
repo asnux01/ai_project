@@ -71,7 +71,8 @@ class C3K (nn.Module):
             bottleneck = Bottleneck(
                 in_channels=ch_h,
                 out_channels=ch_h,
-                shortcut=shortcut
+                shortcut=shortcut,
+                e=1.0
             )
                 
             self.bottlenecks.append(bottleneck)
@@ -99,10 +100,7 @@ class C3K (nn.Module):
             x1 = bottleneck(x1)
         
         # Concat
-        x = torch.cat(
-            [x0, x1],
-            dim=1
-        )
+        x = torch.cat([x0, x1], dim=1)
         
         # concat 이후 Conv
         x = self.conv2(x)

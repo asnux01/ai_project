@@ -51,14 +51,10 @@ def main():
     config = Config()
 
     # Random Seed 설정
-    set_seed(
-        config.seed
-    )
+    set_seed(config.seed)
 
     # Device 설정
-    device = torch.device(
-        config.device
-    )
+    device = torch.device(config.device)
 
     # Training Transform
     train_transform = DetectionTransform(
@@ -120,9 +116,7 @@ def main():
     )
 
     # Model Device 이동
-    model = model.to(
-        device
-    )
+    model = model.to(device)
 
     # Detection Loss
     criterion = YOLO11DetectionLoss(
@@ -136,9 +130,7 @@ def main():
     )
 
     # Detection Loss Device 이동
-    criterion = criterion.to(
-        device
-    )
+    criterion = criterion.to(device)
 
     # Optimizer
     optimizer = build_optimizer(

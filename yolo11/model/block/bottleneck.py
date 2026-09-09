@@ -12,19 +12,20 @@ class Bottleneck(nn.Module):
         self,
         in_channels,
         out_channels,
-        shortcut=True
+        shortcut=True,
+        e=0.5
     ):
         
         # PyTorch 사용을 위해 nn.Module 초기화
         super(Bottleneck, self).__init__()
         
         # 파라미터
-        ch_i = in_channels          # 입력 채널
-        ch_h = in_channels          # hidden 채널
-        ch_o = out_channels         # 출력 채널
+        ch_i = in_channels              # 입력 채널
+        ch_h = int(out_channels * e)    # hidden 채널
+        ch_o = out_channels             # 출력 채널
         
-        # 포워드 접근 가능 파라미터
-        self.shortcut = shortcut    # shortcut 사용 여부
+        # shortcut 사용 여부
+        self.shortcut = shortcut and ch_i == ch_o
           
         # 첫 번째 Conv
         self.conv0 = Conv(
@@ -32,7 +33,7 @@ class Bottleneck(nn.Module):
             out_channels=ch_h,
             kernel_size=3,
             stride=1,
-            padding=1,
+            padding=1
         )
         
         # 두 번째 Conv
@@ -41,7 +42,7 @@ class Bottleneck(nn.Module):
             out_channels=ch_o,
             kernel_size=3,
             stride=1,
-            padding=1,
+            padding=1
         )
         
         
