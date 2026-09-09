@@ -27,9 +27,12 @@ def save_checkpoint(
         "epoch": epoch,
         "best_metric": best_metric,
         "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scheduler_state_dict": scheduler.state_dict()
+        "optimizer_state_dict": optimizer.state_dict()
     }
+    
+    # Scheduler 저장
+    if scheduler is not None:
+        checkpoint["scheduler_state_dict"] = scheduler.state_dict()
     
     # EMA 저장
     if ema is not None:

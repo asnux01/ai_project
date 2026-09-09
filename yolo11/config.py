@@ -40,7 +40,7 @@ class Config:
     cls_gain = 0.5
     dfl_gain = 1.5
     tal_topk = 10
-    tal_alpha = 0.5
+    tal_alpha = 0.8
     tal_beta = 6.0
     
     # Optimizer

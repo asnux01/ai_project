@@ -90,7 +90,7 @@ class WarmupCosineScheduler:
     
     def _set_lr(self, lr_scale):
         
-        # OPtimizer Learning Rate 변경
+        # Optimizer Learning Rate 변경
         for(param_group, base_lr) in zip(
             self.optimizer.param_groups,
             self.base_lrs
