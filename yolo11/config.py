@@ -24,7 +24,7 @@ class Config:
     strides = (8, 16, 32)
     
     # Dataloader
-    batch_size = 8
+    batch_size = 16
     num_workers = 4
     pin_memory = True
     
@@ -33,7 +33,9 @@ class Config:
     brightness = 0.2
     contrast = 0.2
     saturation = 0.2
-    hue = 0.2
+    hue = 0.015
+    translate = 0.1
+    scale = 0.5
     
     # Loss
     box_gain = 7.5

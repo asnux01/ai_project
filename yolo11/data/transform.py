@@ -15,7 +15,9 @@ class DetectionTransform:
         brightness=0.2,
         contrast=0.2,
         saturation=0.2,
-        hue=0.02
+        hue=0.015,
+        translate=0.1,
+        scale=0.5
     ):
 
         # 입력 이미지 크기 저장
@@ -34,8 +36,76 @@ class DetectionTransform:
             saturation=saturation,
             hue=hue
         )
+        
+        # Random affine 설정
+        self.translate = translate
+        self.scale = scale
 
+    
+    def _random_affine(
+        self,
+        image,
+        boxes
+    ):
+        
+        # 원본 이미지 크기
+        image_width, image_height = image.size
+        
+        # Random scale
+        # scale = 0.5면 0. ~ 1.5 사이에서 sampling
+        scale_factor = 1.0 + (torch.rand(1).item() * 2.0 - 1.0) * self.scale
+        
+        # 너무 작은 scale 방지
+        scale_factor = max(scale_factor, 0.1)
+        
+        # Random translation
+        max_translate_x = self.translate * image_width
+        max_translate_y = self.translate * image_height
+        translate_x = int(
+            round((torch.rand(1).item() * 2.0 - 1.0) * max_translate_x) 
+        )
+        translate_y = int(
+            round((torch.rand(1).item() * 2.0 - 1.0) * max_translate_y) 
+        )
 
+        # 이미지 affine transform
+        image = TF.affine(
+            image,
+            angle=0.0,
+            translate=[translate_x, translate_y],
+            scale=scale_factor,
+            shear=[0.0, 0.0],
+            fill=114
+        )
+        # Bbox가 없으면 이미지 바로 반환
+        if boxes.numel() == 0:
+            return image, boxes
+        
+        # 이미지 중심
+        center_x = image_width * 0.5
+        center_y = image_height * 0.5
+        
+        # Bbox 복사
+        boxes = boxes.clone()
+        
+        # Scale은 이미지 중심을 기준으로 적용
+        boxes[:, [0, 2]] = (
+            (boxes[:, [0, 2]] - center_x)
+            * scale_factor + center_x + translate_x
+        )
+        
+        boxes[:, [1, 3]] = (
+            (boxes[:, [1, 3]] - center_y)
+            * scale_factor + center_y + translate_y
+        )
+        
+        # 이미지 밖으로 벗어난 좌표 clipping
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, image_width)
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, image_height)
+        
+        return image, boxes
+                
+        
     def _horizontal_flip(
         self,
         image,
@@ -179,6 +249,10 @@ class DetectionTransform:
         # 학습 시 색상 증강 적용
         if self.training:
             image = self.color_jitter(image)
+        
+        # 학습 시 Random Scale + Translation 적용
+        if self.training:
+            image, boxes = self._random_affine(image, boxes)
 
         # 학습 시 확률적으로 좌우 반전
         if (

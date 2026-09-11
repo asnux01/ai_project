@@ -64,7 +64,9 @@ def main():
         brightness=config.brightness,
         contrast=config.contrast,
         saturation=config.saturation,
-        hue=config.hue
+        hue=config.hue,
+        translate=config.translate,
+        scale=config.scale
     )
 
     # Validation Transform
@@ -126,7 +128,9 @@ def main():
         box_gain=config.box_gain,
         cls_gain=config.cls_gain,
         dfl_gain=config.dfl_gain,
-        tal_topk=config.tal_topk
+        tal_topk=config.tal_topk,
+        tal_alpha=config.tal_alpha,
+        tal_beta=config.tal_beta
     )
 
     # Detection Loss Device 이동

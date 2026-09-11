@@ -18,7 +18,9 @@ class YOLO11DetectionLoss(nn.Module):
         box_gain=7.5,
         cls_gain=0.5,
         dfl_gain=1.5,
-        tal_topk=10
+        tal_topk=10,
+        tal_alpha=0.5,
+        tal_beta=6.0
     ):
 
         # nn.Module 초기화
@@ -64,8 +66,9 @@ class YOLO11DetectionLoss(nn.Module):
             TaskAlignedAssigner(
                 topk=tal_topk,
                 num_classes=self.num_classes,
-                alpha=0.5,
-                beta=6.0
+                alpha=tal_alpha,
+                beta=tal_beta,
+                strides=self.strides
             )
         )
 

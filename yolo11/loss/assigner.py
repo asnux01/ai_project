@@ -14,6 +14,7 @@ class TaskAlignedAssigner(nn.Module):
         num_classes=80,
         alpha=0.5,
         beta=6.0,
+        strides=(8, 16, 32),
         eps=1e-9
     ):
 
@@ -26,8 +27,18 @@ class TaskAlignedAssigner(nn.Module):
         self.alpha = alpha
         self.beta = beta
         self.eps = eps
+        
+        # Detection stride 저장
+        self.strides = tuple(strides)
 
-
+        # 작은 GT의 candidate 영역을 보강할 기준 stride
+        self.stride_val = (
+            self.strides[1]
+            if len(self.strides) > 1
+            else self.strides[0]
+        )
+    
+        
     @torch.no_grad()
     def forward(
         self,
@@ -219,29 +230,67 @@ class TaskAlignedAssigner(nn.Module):
         gt_bboxes,
         mask_gt
     ):
+        
+        # 작은 GT에 대해 candidate 선택 영역 확장
+        candidate_bboxes = gt_bboxes.clone()
+        
+        # xyxy -> center xy + width.height
+        gt_center_x = (
+            candidate_bboxes[..., 0:1]
+            + candidate_bboxes[..., 2:3]
+        ) * 0.5
+        
+        gt_center_y = (
+            candidate_bboxes[..., 1:2]
+            + candidate_bboxes[..., 3:4]
+        ) * 0.5
 
-        # Anchor X 좌표 가져오기
+        gt_width = (
+            candidate_bboxes[..., 2:3]
+            - candidate_bboxes[..., 0:1]
+        )
+        
+        gt_height = (
+            candidate_bboxes[..., 3:4]
+            - candidate_bboxes[..., 1:2]
+        )
+        
+        # 작은 GT의 candidate 영역을 최소 stride_val 크기로 보강
+        minimum_size = float(self.stride_val)
+        valid_gt = mask_gt.bool()
+        
+        gt_width = torch.where(
+            valid_gt & (gt_width < minimum_size),
+            torch.full_like(gt_width, minimum_size),
+            gt_width
+        )
+        
+        gt_height = torch.where(
+            valid_gt & (gt_height < minimum_size),
+            torch.full_like(gt_height, minimum_size),
+            gt_height
+        )
+        
+        # center xy + width/height -> xyxy
+        gt_x1 = gt_center_x - gt_width * 0.5
+        gt_y1 = gt_center_y - gt_height * 0.5
+        gt_x2 = gt_center_x + gt_width * 0.5
+        gt_y2 = gt_center_y + gt_height * 0.5
+        
+        # Anchor X/Y 좌표
         anchor_x = anchor_points[:, 0].view(1, 1, -1)
-
-        # Anchor Y 좌표 가져오기
         anchor_y = anchor_points[:, 1].view(1, 1, -1)
-
-        # GT Bbox 좌표 가져오기
-        gt_x1 = gt_bboxes[..., 0:1]
-        gt_y1 = gt_bboxes[..., 1:2]
-        gt_x2 = gt_bboxes[..., 2:3]
-        gt_y2 = gt_bboxes[..., 3:4]
-
-        # Anchor가 GT 내부에 있는지 확인
+        
+        # Anchor center가 candidate box 내부에 있는지 확인
         candidate_mask = (
             (anchor_x - gt_x1 > self.eps)
             & (anchor_y - gt_y1 > self.eps)
             & (gt_x2 - anchor_x > self.eps)
             & (gt_y2 - anchor_y > self.eps)
         )
-
-        # 유효한 GT만 사용
-        candidate_mask = candidate_mask & mask_gt.bool()
+        
+        # 실제 GT가 존재하는 위치만 사용
+        candidate_mask = candidate_mask & valid_gt
 
         return candidate_mask
 
