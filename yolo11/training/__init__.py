@@ -11,7 +11,7 @@ from .ema import ModelEMA
 from .optimizer import build_optimizer
 
 # Scheduler
-from .scheduler import WarmupCosineScheduler, build_scheduler
+from .scheduler import WarmupLinearScheduler, build_scheduler
 
 # Trainer
 from .trainer import Trainer
@@ -23,7 +23,7 @@ __all__ = [
     "DetectionTrainer",
     "ModelEMA",
     "build_optimizer",
-    "WarmupCosineScheduler",
+    "WarmupLinearScheduler",
     "build_scheduler",
     "Trainer",
 ]

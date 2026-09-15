@@ -25,7 +25,8 @@ from training import (
 )
 
 from validation import (
-    Validator
+    Validator,
+    COCOEvaluator
 )
 
 # Postprocessor 구현 후 사용
@@ -61,10 +62,9 @@ def main():
         image_size=config.image_size,
         training=True,
         hflip_prob=config.horizontal_flip,
-        brightness=config.brightness,
-        contrast=config.contrast,
-        saturation=config.saturation,
-        hue=config.hue,
+        hsv_h=config.hsv_h,
+        hsv_s=config.hsv_s,
+        hsv_v=config.hsv_v,
         translate=config.translate,
         scale=config.scale
     )
@@ -79,7 +79,10 @@ def main():
     train_dataset = COCODetectionDataset(
         image_dir=config.train_image_dir,
         annotation_file=config.train_annotation_file,
-        transforms=train_transform
+        transforms=train_transform,
+        image_size=config.image_size,
+        mosaic_prob=config.mosaic_prob,
+        close_mosaic=config.close_mosaic
     )
 
     # Validation Dataset
@@ -89,6 +92,21 @@ def main():
         transforms=val_transform
     )
 
+    # Class Index를 원래 COCO Category ID로 복원하는 Mapping 생성
+    class_index_to_category_id = {
+        class_index: category_id
+        for category_id, class_index
+        in val_dataset.category_id_to_class_index.items()
+    }
+
+    # COCO 공식 Evaluator 생성
+    coco_evaluator = COCOEvaluator(
+        coco_gt=val_dataset.coco,
+        class_index_to_category_id=class_index_to_category_id,
+        image_size=config.image_size,
+        max_detections=config.max_detections
+    )
+
     # Training DataLoader
     train_loader = build_dataloader(
         dataset=train_dataset,
@@ -96,7 +114,8 @@ def main():
         shuffle=True,
         num_workers=config.num_workers,
         pin_memory=config.pin_memory,
-        drop_last=False
+        drop_last=False,
+        persistent_workers=False
     )
 
     # Validation DataLoader
@@ -106,7 +125,8 @@ def main():
         shuffle=False,
         num_workers=config.num_workers,
         pin_memory=config.pin_memory,
-        drop_last=False
+        drop_last=False,
+        persistent_workers=True
     )
 
     # Model
@@ -186,7 +206,9 @@ def main():
         device=device,
         scheduler=scheduler,
         ema=ema,
-        max_grad_norm=config.max_grad_norm
+        max_grad_norm=config.max_grad_norm,
+        batch_size=config.batch_size,
+        nominal_batch_size=config.nominal_batch_size
     )
 
     # Validator
@@ -195,7 +217,8 @@ def main():
         postprocessor=postprocessor,
         device=device,
         num_classes=config.num_classes,
-        max_detections=config.max_detections
+        max_detections=config.max_detections,
+        coco_evaluator=coco_evaluator
     )
 
     # Trainer

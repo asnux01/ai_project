@@ -2,7 +2,7 @@
 import math
 
 
-class WarmupCosineScheduler:
+class WarmupLinearScheduler:
     
     def __init__(
         self,
@@ -58,14 +58,14 @@ class WarmupCosineScheduler:
         if self.total_steps <= self.warmup_steps:
             return 1.0
         
-        # Cosine Decay Step 수
+        # Linear Decay Step 수
         decay_steps = self.total_steps - self.warmup_steps
         
-        # Cosine 구간이 1 step인 경우
+        # Linear 구간이 1 step인 경우
         if decay_steps == 1:
             return self.min_lr_ratio
         
-        # Cosine 진행률
+        # Linear 진행률
         decay_progress = (
             (step - self.warmup_steps) 
             / (decay_steps - 1)
@@ -76,13 +76,10 @@ class WarmupCosineScheduler:
             min(1.0, decay_progress)
         )
         
-        # Cosine 값
-        cosine = 0.5 * (1.0 + math.cos(math.pi * decay_progress))
-        
         # Learning Rate 비율
         lr_scale = (
-            self.min_lr_ratio
-            + (1.0 - self.min_lr_ratio) * cosine
+            1.0 - decay_progress
+            * (1.0 - self.min_lr_ratio)
         )
         
         return lr_scale
@@ -146,7 +143,7 @@ def build_scheduler(
     min_lr_ratio=0.01
 ):
     # Scheduler 생성
-    scheduler = WarmupCosineScheduler(
+    scheduler = WarmupLinearScheduler(
         optimizer=optimizer,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,

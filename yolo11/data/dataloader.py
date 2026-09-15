@@ -87,7 +87,8 @@ def build_dataloader(
     shuffle,
     num_workers=4,
     pin_memory=True,
-    drop_last=False
+    drop_last=False,
+    persistent_workers=False
 ):
 
     # DataLoader 생성
@@ -99,7 +100,7 @@ def build_dataloader(
         pin_memory=pin_memory,
         drop_last=drop_last,
         collate_fn=detection_collate_fn,
-        persistent_workers=num_workers > 0
+        persistent_workers=(persistent_workers and num_workers > 0)
     )
 
     return dataloader

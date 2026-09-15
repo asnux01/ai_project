@@ -1,7 +1,6 @@
 # 라이브러리
 import torch
 
-from torchvision.transforms import ColorJitter
 from torchvision.transforms import functional as TF
 
 
@@ -12,10 +11,9 @@ class DetectionTransform:
         image_size=640,
         training=True,
         hflip_prob=0.5,
-        brightness=0.2,
-        contrast=0.2,
-        saturation=0.2,
-        hue=0.015,
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
         translate=0.1,
         scale=0.5
     ):
@@ -29,23 +27,57 @@ class DetectionTransform:
         # 좌우 반전 확률 저장
         self.hflip_prob = hflip_prob
 
-        # 색상 증강 설정
-        self.color_jitter = ColorJitter(
-            brightness=brightness,
-            contrast=contrast,
-            saturation=saturation,
-            hue=hue
-        )
+        # HSV 색상 증강 설정
+        self.hsv_h = hsv_h
+        self.hsv_s = hsv_s
+        self.hsv_v = hsv_v
         
         # Random affine 설정
         self.translate = translate
         self.scale = scale
 
     
+    def _hsv_augment(self, image):
+        
+        # Hue 변화량 무작위 Sampling
+        hue_factor = (
+            (torch.rand(1).item() * 2.0 - 1.0)
+            * self.hsv_h
+        )
+        
+        # Saturation 변화 비율 무작위 Sampling
+        saturation_factor = (
+            1.0 + (torch.rand(1).item() * 2.0 - 1.0)
+            * self.hsv_s
+        )
+        
+        # Brightness(Value) 변화 비율 무작위 Sampling
+        value_factor = (
+            1.0 + (torch.rand(1).item() * 2.0 - 1.0)
+            * self.hsv_v
+        )
+        
+        # 음수 배율 방지
+        saturation_factor = max(saturation_factor, 0.0)
+        value_factor = max(value_factor, 0.0)
+        
+        # Hue 변환
+        image = TF.adjust_hue(image, hue_factor)
+        
+        # Saturation 변환
+        image = TF.adjust_saturation(image, saturation_factor)
+        
+        # Brightness(Value) 변환
+        image = TF.adjust_brightness(image, value_factor)
+        
+        return image
+    
+    
     def _random_affine(
         self,
         image,
-        boxes
+        boxes,
+        classes
     ):
         
         # 원본 이미지 크기
@@ -77,15 +109,18 @@ class DetectionTransform:
             shear=[0.0, 0.0],
             fill=114
         )
+        
         # Bbox가 없으면 이미지 바로 반환
         if boxes.numel() == 0:
-            return image, boxes
+            return image, boxes, classes
         
         # 이미지 중심
         center_x = image_width * 0.5
         center_y = image_height * 0.5
         
+        
         # Bbox 복사
+        original_boxes = boxes.clone()
         boxes = boxes.clone()
         
         # Scale은 이미지 중심을 기준으로 적용
@@ -103,7 +138,44 @@ class DetectionTransform:
         boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, image_width)
         boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, image_height)
         
-        return image, boxes
+        # 기존 bbox 크기
+        old_width = (original_boxes[:, 2] - original_boxes[:, 0]).clamp(min=1e-6)
+        old_height = (original_boxes[:, 3] - original_boxes[:, 1]).clamp(min=1e-6)
+        
+        # 변환 후 bbox 크기
+        new_width = (boxes[:, 2] - boxes[:, 0]).clamp(min=0.0)
+        new_height = (boxes[:, 3] - boxes[:, 1]).clamp(min=0.0)
+        
+        # affine 결과를 고려한 원래 예상 면적
+        expected_area = old_width * old_height * (scale_factor ** 2)
+        
+        # affine 변환 후 실제 bbox 면적
+        new_area = new_width * new_height
+        
+        # 원래 예상 면적 대비 변환 후 유지된 bbox 면적 비율
+        retained_area_ratio = new_area / (expected_area + 1e-6)
+        
+        # 변환 후 bbox의 가로세로 비율 계산
+        aspect_ratio = torch.maximum(
+            new_width / (new_height + 1e-6),
+            new_height / (new_width + 1e-6)
+        )
+        
+        # 비정상적인 bbox 제거 조건
+        keep_mask = (
+            (new_width > 2.0)
+            & (new_height > 2.0)
+            & (retained_area_ratio > 0.10)
+            & (aspect_ratio < 100.0)
+        )
+        
+        # 유효한 bbox만 유지
+        boxes = boxes[keep_mask]
+        
+        # 유효한 bbox에 대응하는 클래스만 유지
+        classes = classes[keep_mask]
+        
+        return image, boxes, classes
                 
         
     def _horizontal_flip(
@@ -246,14 +318,15 @@ class DetectionTransform:
         boxes = sample["bboxes"].clone()
         classes = sample["cls"].clone()
 
-        # 학습 시 색상 증강 적용
-        if self.training:
-            image = self.color_jitter(image)
         
         # 학습 시 Random Scale + Translation 적용
         if self.training:
-            image, boxes = self._random_affine(image, boxes)
+            image, boxes, classes = self._random_affine(image, boxes, classes)
 
+        # 학습 시 HSV 색생 증강 적용
+        if self.training:
+            image = self._hsv_augment(image)
+            
         # 학습 시 확률적으로 좌우 반전
         if (
             self.training

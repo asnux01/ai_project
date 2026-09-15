@@ -14,13 +14,17 @@ class Validator:
         postprocessor,
         device,
         num_classes=80,
-        max_detections=100
+        max_detections=100,
+        coco_evaluator=None
     ):
         
         # 파라미터
         self.criterion = criterion
         self.postprocessor = postprocessor
         self.device = torch.device(device)
+        
+        # COCO 공식 평가기 저장
+        self.coco_evaluator = coco_evaluator
         
         # Detection Metric
         self.metrics = DetectionMetrics(
@@ -81,6 +85,10 @@ class Validator:
     
         # Metric 초기화
         self.metrics.reset()
+        
+        # COCO Evaluator 초기화
+        if self.coco_evaluator is not None:
+            self.coco_evaluator.reset()
     
         # Loss 누적값
         total_loss = 0.0
@@ -141,9 +149,23 @@ class Validator:
                 
                 # Detection Metric 누적
                 self.metrics.update(predictions=predictions, targets=targets)
-                                
+                
+                # COCO 공식 Metric 계산을 위한 Prediction 누적
+                if self.coco_evaluator is not None:
+                    self.coco_evaluator.update(
+                        predictions=predictions,
+                        batch=batch
+                    )
+                    
+                # Logging용 Validation Total Loss 계산
+                display_loss = (
+                    loss_items["box_loss"].item()
+                    + loss_items["cls_loss"].item()
+                    + loss_items["dfl_loss"].item()
+                )
+                    
                 # Loss 누적
-                total_loss += loss.item()
+                total_loss += display_loss
                 total_box_loss += loss_items["box_loss"].item()
                 total_cls_loss += loss_items["cls_loss"].item()
                 total_dfl_loss += loss_items["dfl_loss"].item()
@@ -174,6 +196,12 @@ class Validator:
             # Detection Metric 계산
             detection_metrics = self.metrics.compute()
             
+            # COCO 공식 Metric 계산
+            if self.coco_evaluator is not None:
+                coco_metrics = self.coco_evaluator.compute()
+            else:
+                coco_metrics = None
+
             # Validation 결과
             val_metrics = {
                 "loss": total_loss / num_steps,
@@ -186,5 +214,24 @@ class Validator:
                 "mar100": detection_metrics["mar100"]
             }
             
+            # COCO 공식 Metric을 Validation 결과에 추가
+            if coco_metrics is not None:
+
+                val_metrics["coco_map50_95"] = (
+                    coco_metrics["map50_95"]
+                )
+
+                val_metrics["coco_map50"] = (
+                    coco_metrics["map50"]
+                )
+
+                val_metrics["coco_map75"] = (
+                    coco_metrics["map75"]
+                )
+
+                val_metrics["coco_mar"] = (
+                    coco_metrics["mar"]
+                )
+                
         return val_metrics
     

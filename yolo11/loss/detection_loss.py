@@ -30,6 +30,7 @@ class YOLO11DetectionLoss(nn.Module):
         self.num_classes = num_classes
         self.reg_max = reg_max
         self.strides = strides
+        self.last_debug = {}
 
         # Detect Head 출력 채널 수 계산
         self.num_outputs = (
@@ -173,6 +174,16 @@ class YOLO11DetectionLoss(nn.Module):
             target_scores.sum()
             .clamp(min=1.0)
         )
+        
+        #
+        self.last_debug = {
+            "foreground_count": int(
+                foreground_mask.sum().item()
+            ),
+            "target_scores_sum": float(
+                normalizer.detach().item()
+            )
+        }
 
         # Classification Loss 계산
         cls_loss = (
@@ -252,8 +263,11 @@ class YOLO11DetectionLoss(nn.Module):
                 weighted_dfl_loss.detach()
             )
         }
+        
+        # Opitimization loss
+        optimization_loss = total_loss * batch_size
 
-        return total_loss, loss_items
+        return optimization_loss, loss_items
 
 
     def _flatten_predictions(

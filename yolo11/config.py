@@ -25,17 +25,25 @@ class Config:
     
     # Dataloader
     batch_size = 16
+    nominal_batch_size = 64
     num_workers = 4
     pin_memory = True
     
     # Data Augmentation
     horizontal_flip = 0.5
-    brightness = 0.2
-    contrast = 0.2
-    saturation = 0.2
-    hue = 0.015
+    
+    # HSV 색상 증강
+    hsv_h = 0.015
+    hsv_s = 0.7
+    hsv_v = 0.4
+    
+    # Geometric 증강
     translate = 0.1
     scale = 0.5
+    
+    # Mosaic 증강
+    mosaic_prob = 1.0
+    close_mosaic = 10
     
     # Loss
     box_gain = 7.5

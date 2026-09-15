@@ -189,5 +189,27 @@ class Trainer:
                 f"mAR100: {val_metric['mar100']:.4f}"
             )
         
+        # COCO 공식 평가 결과 출력
+        if "coco_map50_95" in val_metric:
+            print(
+                "COCO   | "
+                f"mAP50-95: {val_metric['coco_map50_95']:.4f} | "
+                f"mAP50: {val_metric['coco_map50']:.4f} | "
+                f"mAP75: {val_metric['coco_map75']:.4f} | "
+                f"mAR: {val_metric['coco_mar']:.4f}"
+            )
+
+            # Custom Metric과 COCO Metric의 mAP50-95 차이 출력
+            metric_gap = (
+                val_metric["map50_95"]
+                - val_metric["coco_map50_95"]
+            )
+
+            print(
+                "Gap    | "
+                f"Custom - COCO mAP50-95: "
+                f"{metric_gap:+.4f}"
+            )
+        
         # Best Metric
         print(f"Best {self.monitor}: {best_metric:.4f}")

@@ -14,7 +14,9 @@ class DetectionTrainer:
         device,
         scheduler=None,
         ema=None,
-        max_grad_norm=None
+        max_grad_norm=None,
+        batch_size=16,
+        nominal_batch_size=64
     ):
         
         # 파라미터
@@ -25,6 +27,10 @@ class DetectionTrainer:
         self.scheduler = scheduler
         self.ema = ema
         self.max_grad_norm = max_grad_norm
+        self.accumulate = max(
+            round(nominal_batch_size / batch_size),
+            1
+        )
         
         # Loss 모듈 Device 설정
         self.criterion.to(self.device)
@@ -67,6 +73,16 @@ class DetectionTrainer:
         epochs
     ):
         
+        # Dataset에 현재 Epoch 정보 전달
+        if hasattr(
+            train_loader.dataset,
+            "set_epoch"
+        ):
+            train_loader.dataset.set_epoch(
+                epoch=epoch,
+                total_epochs=epochs
+            )
+        
         # Model 학습 모드
         self.model.train()
         
@@ -98,8 +114,13 @@ class DetectionTrainer:
             leave=True
         )
         
+        # Epoch 시작 시 Gradient 초기화
+        self.optimizer.zero_grad(
+            set_to_none=True
+        )
+
         # Batch 학습
-        for batch in progress_bar:
+        for batch_index, batch in enumerate(progress_bar):
             
             # Batch를 Device로 이동
             batch = self._move_to_device(batch)
@@ -107,14 +128,21 @@ class DetectionTrainer:
             # 입력 이미지
             images = batch["img"]
             
-            # Gradient 초기화
-            self.optimizer.zero_grad(set_to_none=True)
-            
             # Forward
             predictions = self.model(images)
             
             # Loss 계산
             loss, loss_items = self.criterion(predictions, batch)
+            
+            # Positive Sample 및 Target Score Debug 정보 출력
+            if num_steps % 100 == 0:
+                debug = self.criterion.last_debug
+                
+                print(
+                    f"\nFG: {debug.get('foreground_count')} | "
+                    f"TargetScoreSum: "
+                    f"{debug.get('target_scores_sum'):.2f}"
+                )
             
             # Loss 유효성 검사
             if not torch.isfinite(loss):
@@ -125,26 +153,47 @@ class DetectionTrainer:
             # Backward
             loss.backward()
             
-            # Gradient Clipping
-            if self.max_grad_norm is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(),
-                    self.max_grad_norm
+            # 현재 Batch에서 Optimizer Step을 수행할지 결정
+            should_step = (
+                ((batch_index + 1) % self.accumulate == 0)
+                or ((batch_index + 1) == len(train_loader))
+            )
+            
+            # Gradient가 충분히 누적된 경우에만 Parameter 업데이트
+            if should_step:
+
+                # Gradient Clipping
+                if self.max_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.max_grad_norm
+                    )
+            
+                # Model Parameter 업데이트
+                self.optimizer.step()
+            
+                # Gradient 초기화
+                self.optimizer.zero_grad(
+                    set_to_none=True
                 )
             
-            # Model Parameter 업데이트
-            self.optimizer.step()
-            
+                # EMA 업데이트
+                if self.ema is not None:
+                    self.ema.update(self.model)
+                
             # Learning Rate 업데이트
             if self.scheduler is not None:
                 self.scheduler.step()
-            
-            # EMA 업데이트
-            if self.ema is not None:
-                self.ema.update(self.model)
+                
+            # Logging용 Total Loss 계산
+            display_loss = (
+                loss_items["box_loss"].item()
+                + loss_items["cls_loss"].item()
+                + loss_items["dfl_loss"].item()
+            )
                 
             # Loss 누적
-            total_loss += loss.detach().item()
+            total_loss += display_loss
             total_box_loss += loss_items["box_loss"].item()
             total_cls_loss += loss_items["cls_loss"].item()
             total_dfl_loss += loss_items["dfl_loss"].item()
