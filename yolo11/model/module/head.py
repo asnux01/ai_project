@@ -81,7 +81,7 @@ class Head(nn.Module):
         ):
 
             # Box branch bias 초기화
-            nn.init.constant_(box_branch.conv2d.bias, 2.0)
+            nn.init.constant_(box_branch.conv2d.bias, 1.0)
 
             # Class branch bias 초기화
             class_bias = math.log(

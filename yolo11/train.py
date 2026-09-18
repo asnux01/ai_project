@@ -104,7 +104,7 @@ def main():
         coco_gt=val_dataset.coco,
         class_index_to_category_id=class_index_to_category_id,
         image_size=config.image_size,
-        max_detections=config.max_detections
+        max_detections=config.metric_max_detections
     )
 
     # Training DataLoader
@@ -160,10 +160,8 @@ def main():
     optimizer = build_optimizer(
         model=model,
         learning_rate=config.learning_rate,
-        weight_decay=config.weight_decay,
-        beta1=config.beta1,
-        beta2=config.beta2,
-        eps=config.optimizer_eps
+        momentum=config.momentum,
+        weight_decay=config.weight_decay
     )
 
     # Scheduler
@@ -171,8 +169,13 @@ def main():
         optimizer=optimizer,
         epochs=config.epochs,
         steps_per_epoch=len(train_loader),
+        batch_size=config.batch_size,
+        nominal_batch_size=config.nominal_batch_size,
         warmup_epochs=config.warmup_epochs,
-        min_lr_ratio=config.min_lr_ratio
+        min_lr_ratio=config.min_lr_ratio,
+        momentum=config.momentum,
+        warmup_momentum=config.warmup_momentum,
+        warmup_bias_lr=config.warmup_bias_lr
     )
 
     # EMA
@@ -195,7 +198,7 @@ def main():
         strides=config.strides,
         confidence_threshold=config.confidence_threshold,
         nms_iou_threshold=config.nms_iou_threshold,
-        max_detections=config.max_detections
+        max_detections=config.nms_max_detections
     )
 
     # Detection Trainer
@@ -217,7 +220,7 @@ def main():
         postprocessor=postprocessor,
         device=device,
         num_classes=config.num_classes,
-        max_detections=config.max_detections,
+        max_detections=config.metric_max_detections,
         coco_evaluator=coco_evaluator
     )
 

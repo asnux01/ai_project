@@ -68,8 +68,7 @@ class YOLO11DetectionLoss(nn.Module):
                 topk=tal_topk,
                 num_classes=self.num_classes,
                 alpha=tal_alpha,
-                beta=tal_beta,
-                strides=self.strides
+                beta=tal_beta
             )
         )
 

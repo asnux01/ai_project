@@ -204,8 +204,8 @@ class COCOEvaluator:
             set(self.image_ids)
         )
         
-        # 현재 Postprocessor와 동일한 최대 Detection 수 사용
-        coco_eval.params.maxDets = [1, 10, self.max_detections]
+        # COCO 최대 Detection 수
+        coco_eval.params.maxDets = [1, 10, 100]
         
         # COCO 평가 실행
         coco_eval.evaluate()

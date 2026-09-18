@@ -12,7 +12,7 @@ class DetectionPostprocessor:
         strides=(8, 16, 32),
         confidence_threshold=0.001,
         nms_iou_threshold=0.7,
-        max_detections=100
+        max_detections=300
     ):
         
         # 입력 검사
@@ -90,15 +90,51 @@ class DetectionPostprocessor:
             # 현재 Image의 Class Score
             class_scores = pred_scores[image_index]
             
-            # 각 Anchor에서 가장 높은 Class Score와 Label 선택
-            scores, labels = torch.max(class_scores, dim=1)
+            # Detection Candidate 선택
+            candidate_indices = torch.nonzero(
+                class_scores
+                > self.confidence_threshold,
+                as_tuple=False
+            )
             
-            # Confidence Threshold 적용
-            confidence_mask = scores >= self.confidence_threshold
-            boxes = boxes[confidence_mask]
-            scores = scores[confidence_mask]
-            labels = labels[confidence_mask]
+            # Detection이 없는 경우
+            if candidate_indices.numel() == 0:
+                
+                results.append(
+                    self._empty_result(
+                        device=pred_bboxes.device,
+                        dtype=pred_bboxes.dtype
+                    )
+                )
+                
+                continue
             
+            # Anchor Index
+            anchor_indices = candidate_indices[:, 0]
+            
+            # Class Label
+            labels = candidate_indices[:, 1]
+            
+            # Bbox 선택
+            boxes = boxes[anchor_indices]
+            
+            # Score 선택
+            scores = class_scores[anchor_points, labels]
+            
+            # NMS Candidate 제한
+            max_nms = 30000
+            
+            if scores.numel() > max_nms:
+                
+                top_indices = torch.argsort(
+                    scores,
+                    descending=True
+                )[:max_nms]
+                
+                boxes = boxes[top_indices]
+                scores = scores[top_indices]
+                labels = labels[top_indices]
+                
             # 유효한 크기의 Bbox만 유지
             if boxes.numel() > 0:
                 

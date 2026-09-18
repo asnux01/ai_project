@@ -455,55 +455,28 @@ class COCODetectionDataset(Dataset):
                 dim=0
             )
             
-            # Crop 전 Bbox 크기 저장
-            original_widths = (
-                boxes[:, 2] - boxes[:, 0]
-            ).clamp(min=1e-6)
+            # Mosaic Canvas 크기
+            mosaic_size = image_size * 2
             
-            original_heights = (
-                boxes[:, 3] - boxes[:, 1]
-            ).clamp(min=1e-6)
-            
-            original_areas = original_widths * original_heights
-            
-            # 2x Canvas의 중앙 image_size 영역만 사용할 것이므로 Offset 계산
-            crop_offset = image_size // 2
-            
-            # Crop 위치만큼 Bbox 좌표 이동
-            boxes[:, [0, 2]] -= crop_offset
-            boxes[:, [1, 3]] -= crop_offset
-            
-            # 최종 Mosaic 이미지 범위 내부로 Bbox 제한
-            boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, image_size)
-            boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, image_size)
-
-            # Crop 이후 Bbox 크기 계산
-            new_widths = (
-                boxes[:, 2] - boxes[:, 0]
-            ).clamp(min=0.0)
-            
-            new_heights = (
-                boxes[:, 3] - boxes[:, 1]
-            ).clamp(min=0.0)
-            
-            # Crop 이후 Bbox 면적 계산
-            new_areas = new_widths * new_heights
-            
-            # 기존 Bbox 면적 대비 유지된 비율 계산
-            retained_area_ratio = new_areas / (original_areas + 1e-6)
-            
-            # Bbox 가로셀로 비율 계산
-            aspect_ratio = torch.maximum(
-                new_widths / (new_heights + 1e-6),
-                new_heights / (new_widths + 1e-6)
+            # Bbox를 Mosaic 범위 내부로 제한
+            boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(
+                0,
+                mosaic_size
             )
             
-            # 지나치게 작거나 심하게 잘린 Bbox 제거
+            boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(
+                0,
+                mosaic_size
+            )
+            
+            # Bbox 크기 계산
+            widths = boxes[:, 2] - boxes[:, 0]
+            heights = boxes[:, 3] - boxes[:, 1]
+            
+            # 유효한 Bbox 선택
             keep_mask = (
-                (new_widths > 2.0)
-                & (new_heights > 2.0)
-                & (retained_area_ratio > 0.10)
-                & (aspect_ratio < 100.0)
+                (widths > 0.0)
+                & (heights > 0.0)
             )
             
             # 유효한 Bbox와 Class만 유지
@@ -522,33 +495,29 @@ class COCODetectionDataset(Dataset):
                 (0,), dtype=torch.int64
             )
         
-        # 2x Canvas의 중앙 640x640 영역 Crop
-        crop_offset = image_size // 2
-        
-        mosaic_image = mosaic_image.crop(
-            (
-                crop_offset,
-                crop_offset,
-                crop_offset + image_size,
-                crop_offset + image_size
-            )
-        )
-        
         # Training영 Mosaic Sample 구성
         sample = {
             "img": mosaic_image,
             "bboxes": boxes,
             "cls": classes,
             
-            # Training에서는 실제 COCO 평가에 사용되지 않으므로
             # 기준 이미지의 ID를 그대로 저장
             "image_id": self.image_ids[index],
             
-            # Mosaic Image임을 표시
+            # Mosaic Image 표시
             "im_file": "mosaic",
             
-            # Mosaic 결과 자체가 image_size x image_size이므로 해당 크기 저장
-            "ori_shape": (image_size, image_size)
+            # Mosaic 이미지 크기
+            "ori_shape": (
+                image_size * 2, 
+                image_size * 2
+            ),
+            
+            # Random Perspective Border
+            "mosaic_border": (
+                -image_size // 2,
+                -image_size // 2
+            )
         }
         
         return sample

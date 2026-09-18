@@ -38,7 +38,9 @@ class Conv(nn.Module):
         
         # BatchNorm
         self.bn = nn.BatchNorm2d(
-            num_features=ch_o
+            num_features=ch_o,
+            eps=1e-3,
+            momentum=0.03
         )
         
         # Activation

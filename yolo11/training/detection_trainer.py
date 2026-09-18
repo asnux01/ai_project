@@ -27,10 +27,18 @@ class DetectionTrainer:
         self.scheduler = scheduler
         self.ema = ema
         self.max_grad_norm = max_grad_norm
+        self.batch_size = batch_size
+        self.nominal_batch_size = nominal_batch_size
         self.accumulate = max(
             round(nominal_batch_size / batch_size),
             1
         )
+        
+        # 마지막 Optimizer Step
+        self.last_optimizer_steps = -1
+        
+        # Gradient 초기화
+        self.optimizer.zero_grad(set_to_none=True)
         
         # Loss 모듈 Device 설정
         self.criterion.to(self.device)
@@ -113,14 +121,29 @@ class DetectionTrainer:
             total=len(train_loader),
             leave=True
         )
-        
-        # Epoch 시작 시 Gradient 초기화
-        self.optimizer.zero_grad(
-            set_to_none=True
-        )
 
         # Batch 학습
         for batch_index, batch in enumerate(progress_bar):
+            
+            # Global Step
+            global_step = (
+                epoch * len(train_loader)
+                + batch_index
+            )
+            
+            # Warmup
+            if self.scheduler is not None:
+                
+                self.scheduler.prepare_batch(
+                    global_step=global_step,
+                    epoch=epoch
+                )
+                
+                self.accumulate = (
+                    self.scheduler.get_accumulate(
+                        global_step
+                    )
+                )
             
             # Batch를 Device로 이동
             batch = self._move_to_device(batch)
@@ -155,22 +178,27 @@ class DetectionTrainer:
             
             # 현재 Batch에서 Optimizer Step을 수행할지 결정
             should_step = (
-                ((batch_index + 1) % self.accumulate == 0)
-                or ((batch_index + 1) == len(train_loader))
+                global_step
+                - self.last_optimizer_steps
+                >= self.accumulate
             )
             
-            # Gradient가 충분히 누적된 경우에만 Parameter 업데이트
+            # Parameter 업데이트
             if should_step:
 
                 # Gradient Clipping
                 if self.max_grad_norm is not None:
+                    
                     torch.nn.utils.clip_grad_norm_(
                         self.model.parameters(),
                         self.max_grad_norm
                     )
             
-                # Model Parameter 업데이트
+                # Optimizer Step
                 self.optimizer.step()
+                
+                # 마지막 Step 저장
+                self.last_optimizer_steps = (global_step)
             
                 # Gradient 초기화
                 self.optimizer.zero_grad(
@@ -180,10 +208,6 @@ class DetectionTrainer:
                 # EMA 업데이트
                 if self.ema is not None:
                     self.ema.update(self.model)
-                
-            # Learning Rate 업데이트
-            if self.scheduler is not None:
-                self.scheduler.step()
                 
             # Logging용 Total Loss 계산
             display_loss = (

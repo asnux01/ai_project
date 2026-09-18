@@ -54,11 +54,9 @@ class Config:
     tal_beta = 6.0
     
     # Optimizer
-    learning_rate = 0.001
+    learning_rate = 0.01
+    momentum = 0.9
     weight_decay = 0.0005
-    beta1 = 0.9
-    beta2 = 0.999
-    optimizer_eps = 1e-8
     
     # Training
     epochs = 100
@@ -66,6 +64,8 @@ class Config:
     
     # Scheduler
     warmup_epochs = 3.0
+    warmup_momentum = 0.8
+    warmup_bias_lr = 0.0
     min_lr_ratio = 0.01
     
     # EMA
@@ -74,13 +74,14 @@ class Config:
     ema_tau = 2000
     
     # Validation
-    max_detections = 100
+    nms_max_detections = 300
+    metric_max_detections = 100
     confidence_threshold = 0.001
     nms_iou_threshold = 0.7
     
     # Checkpoint
     checkpoint_dir = project_root / "ai_project" / "yolo11" / "checkpoints"
-    monitor = "map50_95"
+    monitor = "coco_map50_95"
     monitor_mode = "max"
     resume_path = None
     

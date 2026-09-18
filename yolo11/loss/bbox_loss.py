@@ -254,16 +254,18 @@ def calculate_ciou(
     )
 
     # 종횡비 가중치 계산
-    alpha = (
-        aspect_ratio_difference
-        /
-        (
-            1.0
-            - iou
-            + aspect_ratio_difference
-            + eps
+    with torch.no_grad():
+    
+        alpha = (
+            aspect_ratio_difference
+            /
+            (
+                1.0
+                - iou
+                + aspect_ratio_difference
+                + eps
+            )
         )
-    )
 
     # CIoU 계산
     ciou = (

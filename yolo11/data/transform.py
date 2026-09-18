@@ -1,6 +1,12 @@
 # 라이브러리
+import math
+import random
+
+import cv2
+import numpy as np
 import torch
 
+from PIL import Image
 from torchvision.transforms import functional as TF
 
 
@@ -15,7 +21,10 @@ class DetectionTransform:
         hsv_s=0.7,
         hsv_v=0.4,
         translate=0.1,
-        scale=0.5
+        scale=0.5,
+        degrees=0.0,
+        shear=0.0,
+        perspective=0.0
     ):
 
         # 입력 이미지 크기 저장
@@ -32,9 +41,12 @@ class DetectionTransform:
         self.hsv_s = hsv_s
         self.hsv_v = hsv_v
         
-        # Random affine 설정
+        # Random Perspective 설정
         self.translate = translate
         self.scale = scale
+        self.degrees = degrees
+        self.shear = shear
+        self.perspective = perspective
 
     
     def _hsv_augment(self, image):
@@ -73,106 +85,284 @@ class DetectionTransform:
         return image
     
     
-    def _random_affine(
+    def _random_perspective(
         self,
         image,
         boxes,
-        classes
+        classes,
+        border=(0, 0)
     ):
         
         # 원본 이미지 크기
         image_width, image_height = image.size
         
-        # Random scale
-        # scale = 0.5면 0. ~ 1.5 사이에서 sampling
-        scale_factor = 1.0 + (torch.rand(1).item() * 2.0 - 1.0) * self.scale
+        # Border
+        border_y, border_x = border
         
-        # 너무 작은 scale 방지
-        scale_factor = max(scale_factor, 0.1)
+        # 출력 이미지 크기
+        output_width = image_width + border_x * 2
+        output_height = image_height + border_y * 2
         
-        # Random translation
-        max_translate_x = self.translate * image_width
-        max_translate_y = self.translate * image_height
-        translate_x = int(
-            round((torch.rand(1).item() * 2.0 - 1.0) * max_translate_x) 
-        )
-        translate_y = int(
-            round((torch.rand(1).item() * 2.0 - 1.0) * max_translate_y) 
-        )
-
-        # 이미지 affine transform
-        image = TF.affine(
-            image,
-            angle=0.0,
-            translate=[translate_x, translate_y],
-            scale=scale_factor,
-            shear=[0.0, 0.0],
-            fill=114
+        # Center Matrix
+        center_matrix = np.eye(
+            3,
+            dtype=np.float32
         )
         
-        # Bbox가 없으면 이미지 바로 반환
+        center_matrix[0, 2] = -image_width / 2
+        center_matrix[1, 2] = -image_height / 2
+        
+        # Perspective Matrix
+        perspective_matrix = np.eye(
+            3,
+            dtype=np.float32
+        )
+        
+        perspective_matrix[2, 0] = random.uniform(
+            -self.perspective,
+            self.perspective
+        )
+        
+        perspective_matrix[2, 1] = random.uniform(
+            -self.perspective,
+            self.perspective
+        )
+        
+        # Rotation / Scale Matrix
+        rotation_matrix = np.eye(
+            3,
+            dtype=np.float32
+        )
+        
+        angle = random.uniform(
+            -self.degrees,
+            self.degrees
+        )
+        
+        scale_factor = random.uniform(
+            1.0 - self.scale,
+            1.0 + self.scale
+        )
+        
+        rotation_matrix[:2] = (
+            cv2.getRotationMatrix2D(
+                center=(0, 0),
+                angle=angle,
+                scale=scale_factor
+            )
+        )
+        
+        # Shear Matrix
+        shear_matrix = np.eye(
+            3,
+            dtype=np.float32
+        )
+        
+        shear_matrix[0, 1] = math.tan(
+            random.uniform(
+                -self.shear,
+                self.shear
+            )
+            * math.pi / 180
+        )
+        
+        shear_matrix[1, 0] = math.tan(
+            random.uniform(
+                -self.shear,
+                self.shear
+            )
+            * math.pi /180
+        )
+        
+        # Translation Matrix
+        translation_matrix = np.eye(
+            3,
+            dtype=np.float32
+        )
+        
+        translation_matrix[0, 2] = random.uniform(
+            0.5 - self.translate,
+            0.5 + self.translate
+        ) * output_width
+        
+        translation_matrix[1, 2] = random.uniform(
+            0.5 - self.translate,
+            0.5 + self.translate
+        ) * output_height
+        
+        # Transform Matrix
+        transform_matrix = (
+            translation_matrix
+            @ shear_matrix
+            @ rotation_matrix
+            @ perspective_matrix
+            @ center_matrix
+        )
+        
+        # PIL Image를 Numpy로 변환
+        image_array = np.asarray(image)
+        
+        # Perspective Transform
+        if self.perspective:
+            
+            image_array = cv2.warpPerspective(
+                image_array,
+                transform_matrix,
+                dsize=(output_width, output_height),
+                borderValue=(114, 114, 114)
+            )
+        
+        # Affine Transform
+        else:
+            image_array = cv2.warpAffine(
+                image_array,
+                transform_matrix[:2],
+                dsize=(output_width, output_height),
+                borderValue=(114, 114, 114)
+            )
+        
+        # Numpy를 PIL Image로 변환
+        image = Image.fromarray(image_array)
+        
+        # Bbox가 없으면 바로 반환
         if boxes.numel() == 0:
             return image, boxes, classes
         
-        # 이미지 중심
-        center_x = image_width * 0.5
-        center_y = image_height * 0.5
-        
-        
-        # Bbox 복사
+        # 기존 Bbox 저장
         original_boxes = boxes.clone()
-        boxes = boxes.clone()
         
-        # Scale은 이미지 중심을 기준으로 적용
-        boxes[:, [0, 2]] = (
-            (boxes[:, [0, 2]] - center_x)
-            * scale_factor + center_x + translate_x
+        # Bbox 개수
+        num_boxes = boxes.shape[0]
+        
+        # Bbox 네 모서리 생성
+        corners = torch.ones(
+            (num_boxes * 4, 3),
+            dtype=boxes.dtype,
+            device=boxes.device
         )
         
-        boxes[:, [1, 3]] = (
-            (boxes[:, [1, 3]] - center_y)
-            * scale_factor + center_y + translate_y
+        corners[:, :2] = boxes[
+            :,
+            [
+                0, 1,
+                2, 3,
+                0, 3,
+                2, 1
+            ]
+        ].reshape(num_boxes * 4, 2)
+        
+        # Transfrom Matrix를 Tensor로 변환
+        matrix = torch.from_numpy(
+            transform_matrix
+        ).to(
+            device=boxes.device,
+            dtype=boxes.dtype
         )
         
-        # 이미지 밖으로 벗어난 좌표 clipping
-        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, image_width)
-        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, image_height)
+        # Bbox 좌표 변환
+        corners = corners @ matrix.T
         
-        # 기존 bbox 크기
-        old_width = (original_boxes[:, 2] - original_boxes[:, 0]).clamp(min=1e-6)
-        old_height = (original_boxes[:, 3] - original_boxes[:, 1]).clamp(min=1e-6)
+        # Perspective 좌표 변환
+        if self.perspective:
+            
+            corners = (
+                corners[:, :2]
+                / corners[:, 2:3]
+            )
         
-        # 변환 후 bbox 크기
-        new_width = (boxes[:, 2] - boxes[:, 0]).clamp(min=0.0)
-        new_height = (boxes[:, 3] - boxes[:, 1]).clamp(min=0.0)
+        else:
+            
+            corners = corners[:, :2]
         
-        # affine 결과를 고려한 원래 예상 면적
-        expected_area = old_width * old_height * (scale_factor ** 2)
+        # Bbox별 네 모서리 복원
+        corners = corners.reshape(
+            num_boxes,
+            8
+        )
         
-        # affine 변환 후 실제 bbox 면적
-        new_area = new_width * new_height
+        # X 좌표
+        x = corners[
+            :,
+            [0, 2, 4, 6]
+        ]
         
-        # 원래 예상 면적 대비 변환 후 유지된 bbox 면적 비율
-        retained_area_ratio = new_area / (expected_area + 1e-6)
+        # Y 좌표
+        y = corners[
+            :,
+            [1, 3, 5, 7]
+        ]
         
-        # 변환 후 bbox의 가로세로 비율 계산
+        # 새로운 Bbox 생성
+        boxes = torch.stack(
+            (
+                x.min(dim=1).values,
+                y.min(dim=1).values,
+                x.max(dim=1).values,
+                y.max(dim=1).values
+            ),
+            dim=1
+        )
+        
+        # Bbox 좌표 제한
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(
+            0,
+            output_width
+        )
+        
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(
+            0,
+            output_height
+        )
+        
+        # 기존 Bbox 크기
+        old_width = (
+            original_boxes[:, 2]
+            - original_boxes[:, 0]
+        ).clamp(min=1e-6)
+        
+        old_height = (
+            original_boxes[:, 3]
+            - original_boxes[:, 1]
+        ).clamp(min=1e-6)
+        
+        # Scale 적용
+        old_width *= scale_factor
+        old_height *= scale_factor
+        
+        # 변환 후 Bbox 크기
+        new_width = (
+            boxes[:, 2]
+            - boxes[:, 0]
+        ).clamp(min=0.0)
+        
+        new_height = (
+            boxes[:, 3]
+            - boxes[:, 1]
+        ).clamp(min=0.0)
+        
+        # Bbox 면적 비율
+        area_ratio = (
+            new_width
+            * new_height
+            / (old_width * old_height + 1e-6)
+        )
+        
+        # Bbox 가로세로 비율
         aspect_ratio = torch.maximum(
             new_width / (new_height + 1e-6),
             new_height / (new_width + 1e-6)
         )
         
-        # 비정상적인 bbox 제거 조건
+        # 유효한 Bbox 선택
         keep_mask = (
             (new_width > 2.0)
             & (new_height > 2.0)
-            & (retained_area_ratio > 0.10)
+            & (area_ratio > 0.10)
             & (aspect_ratio < 100.0)
         )
         
-        # 유효한 bbox만 유지
+        # 유효한 Bbox와 Class만 유지
         boxes = boxes[keep_mask]
-        
-        # 유효한 bbox에 대응하는 클래스만 유지
         classes = classes[keep_mask]
         
         return image, boxes, classes
@@ -318,34 +508,64 @@ class DetectionTransform:
         boxes = sample["bboxes"].clone()
         classes = sample["cls"].clone()
 
+        # Mosaic Border 가져오기
+        mosaic_border = sample.pop(
+            "mosaic_border",
+            None
+        )
         
-        # 학습 시 Random Scale + Translation 적용
+        # 학습 Transform
         if self.training:
-            image, boxes, classes = self._random_affine(image, boxes, classes)
-
-        # 학습 시 HSV 색생 증강 적용
-        if self.training:
-            image = self._hsv_augment(image)
             
-        # 학습 시 확률적으로 좌우 반전
-        if (
-            self.training
-            and torch.rand(1).item()
-            < self.hflip_prob
-        ):
-            image, boxes = (
-                self._horizontal_flip(
+            # 일반 이미지이면 LetterBox 적용
+            if mosaic_border is None:
+                
+                image, boxes = self._letterbox(
                     image,
                     boxes
                 )
+                
+                border = (0, 0)
+            
+            # Mosaic 이미지이면 Border 사용
+            else:
+                
+                border = mosaic_border
+            
+            # Random Perspective 적용
+            image, boxes, classes = (
+                self._random_perspective(
+                    image=image,
+                    boxes=boxes,
+                    classes=classes,
+                    border=border
+                )
             )
-
-        # 이미지와 Bbox에 LetterBox 적용
-        image, boxes = self._letterbox(
-            image,
-            boxes
-        )
-
+            
+            # HSV 색상 증강 적용
+            image = self._hsv_augment(image)
+            
+            # 확률적으로 좌우 반전
+            if (
+                torch.rand(1).item()
+                < self.hflip_prob
+            ):
+                
+                image, boxes = (
+                    self._horizontal_flip(
+                        image,
+                        boxes
+                    )
+                )
+        
+        # Validation LetterBox
+        else:
+            
+            image, boxes = self._letterbox(
+                image,
+                boxes
+            )
+            
         # 잘못된 Bbox 제거
         boxes, classes = (
             self._remove_invalid_boxes(
