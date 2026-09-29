@@ -8,9 +8,20 @@ def build_optimizer(
     model,
     learning_rate=0.01,
     momentum=0.9,
-    weight_decay=0.0005
+    weight_decay=0.0005,
+    batch_size=16,
+    nominal_batch_size=64
 ):
-
+    # nominal batch size 기준으로 Weight Decay 보정
+    accumulate = max(round(nominal_batch_size / batch_size), 1)
+    
+    scaled_weight_decay = (
+        weight_decay
+        * batch_size
+        *accumulate
+        / nominal_batch_size
+    )
+    
     # Weight decay를 적용할 Parameter
     decay_parameters = []
     
@@ -73,7 +84,7 @@ def build_optimizer(
     # Decay Group
     optimizer.add_param_group({
         "params": decay_parameters,
-        "weight_decay": weight_decay,
+        "weight_decay": scaled_weight_decay,
         "param_group": "decay"
     })
     

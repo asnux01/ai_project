@@ -24,7 +24,7 @@ class Config:
     strides = (8, 16, 32)
     
     # Dataloader
-    batch_size = 16
+    batch_size = 32
     nominal_batch_size = 64
     num_workers = 4
     pin_memory = True
@@ -55,17 +55,17 @@ class Config:
     
     # Optimizer
     learning_rate = 0.01
-    momentum = 0.9
+    momentum = 0.937
     weight_decay = 0.0005
     
     # Training
-    epochs = 100
+    epochs = 150
     max_grad_norm = 10.0
     
     # Scheduler
     warmup_epochs = 3.0
     warmup_momentum = 0.8
-    warmup_bias_lr = 0.0
+    warmup_bias_lr = 0.1
     min_lr_ratio = 0.01
     
     # EMA

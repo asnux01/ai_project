@@ -175,7 +175,7 @@ class WarmupLinearScheduler:
         
         # Scheduler 상태
         return {
-            "current_step": self.current_stpe
+            "current_step": self.current_step
         }
     
     

@@ -254,7 +254,7 @@ class TaskAlignedAssigner(nn.Module):
         candidate_mask = (
             bbox_deltas
             .amin(dim=3)
-            .gt_(self.eps)
+            .gt(self.eps)
         )
         
         # Padding GT 제거

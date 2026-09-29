@@ -119,7 +119,7 @@ class DetectionPostprocessor:
             boxes = boxes[anchor_indices]
             
             # Score 선택
-            scores = class_scores[anchor_points, labels]
+            scores = class_scores[anchor_indices, labels]
             
             # NMS Candidate 제한
             max_nms = 30000
